@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>i.hyper.spectroscopy - GRASS GIS manual</title>
+<meta charset="utf-8">
+</head>
+<body>
+
+<h2>DESCRIPTION</h2>
+
+<p><em>i.hyper.spectroscopy</em> performs per-pixel spectral feature
+interpretation of hyperspectral imagery imported as 3D raster maps
+(<code>raster_3d</code>) by
+<a href="i.hyper.import.html">i.hyper.import</a>.</p>
+
+<p>The module reads wavelength metadata from hyperspectral 3D raster bands,
+computes local band depths across the VNIR-SWIR range (400–2500 nm), matches
+detected absorption features to a physics-based database of 70+ absorbing
+species, and scores 28 composite material hypotheses per pixel.  Two output
+rasters are produced: a dominant-class integer map and a confidence map.</p>
+
+<p><em>i.hyper.spectroscopy</em> is part of the <b>i.hyper</b> module family.</p>
+
+<h3>Interpretation pipeline</h3>
+
+<p>The engine works in three layers:</p>
+
+<ol>
+  <li><b>Feature layer</b> — For each band, the local band depth is estimated as
+    <code>max(0, 1 − R_band / R_continuum)</code>, where the continuum is the
+    maximum reflectance within a ±150 nm sliding window.  Bands with depth below
+    <code>min_band_depth</code> are discarded.</li>
+  <li><b>Chromophore layer</b> — Detected features are matched against the
+    built-in absorption feature database.  Each match scores the candidate
+    absorbing species by band-depth strength and detection multiplicity.</li>
+  <li><b>Evidence layer</b> — Composite signatures (rules requiring specific
+    combinations of species) are evaluated per pixel.  Rules that pass all
+    required-species tests receive a score equal to their base score plus a
+    bonus for each optional species also detected.</li>
+</ol>
+
+<p>The class code with the highest score is written to the output map.  Pixels
+where all composite scores fall below 0.10 receive class 0 (unknown).</p>
+
+<h3>Class codes</h3>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Code</th><th>Name</th><th>Category</th></tr>
+  <tr><td>0</td><td>unknown</td><td>—</td></tr>
+  <tr><td>1</td><td>green_vegetation</td><td>biologic</td></tr>
+  <tr><td>2</td><td>stressed_vegetation</td><td>biologic</td></tr>
+  <tr><td>3</td><td>dry_plant_litter</td><td>biologic</td></tr>
+  <tr><td>4</td><td>oxyhemoglobin_blood</td><td>biologic</td></tr>
+  <tr><td>5</td><td>deoxyhemoglobin_blood</td><td>biologic</td></tr>
+  <tr><td>6</td><td>kaolinite</td><td>mineral</td></tr>
+  <tr><td>7</td><td>smectite_montmorillonite</td><td>mineral</td></tr>
+  <tr><td>8</td><td>muscovite_illite</td><td>mineral</td></tr>
+  <tr><td>9</td><td>calcite</td><td>mineral</td></tr>
+  <tr><td>10</td><td>dolomite</td><td>mineral</td></tr>
+  <tr><td>11</td><td>gypsum_evaporite</td><td>mineral</td></tr>
+  <tr><td>12</td><td>liquid_water</td><td>material</td></tr>
+  <tr><td>13</td><td>ice_snow</td><td>geological</td></tr>
+  <tr><td>14</td><td>olivine</td><td>mineral</td></tr>
+  <tr><td>15</td><td>pyroxene_orthopyroxene</td><td>mineral</td></tr>
+  <tr><td>16</td><td>hematite_iron_oxide</td><td>mineral</td></tr>
+  <tr><td>17</td><td>goethite</td><td>mineral</td></tr>
+  <tr><td>18</td><td>neodymium_REE</td><td>mineral</td></tr>
+  <tr><td>19</td><td>crude_oil_petroleum</td><td>organic</td></tr>
+  <tr><td>20</td><td>coal</td><td>geological</td></tr>
+  <tr><td>21</td><td>polyethylene_plastic</td><td>synthetic</td></tr>
+  <tr><td>22</td><td>protein_rich_material</td><td>biologic</td></tr>
+  <tr><td>23</td><td>cyanobacteria_algae</td><td>biologic</td></tr>
+  <tr><td>24</td><td>serpentinite</td><td>mineral</td></tr>
+  <tr><td>25</td><td>advanced_argillic_alteration</td><td>geological</td></tr>
+  <tr><td>26</td><td>propylitic_alteration</td><td>geological</td></tr>
+  <tr><td>27</td><td>chrysotile_asbestos</td><td>mineral</td></tr>
+  <tr><td>28</td><td>starch_food_grain</td><td>biologic</td></tr>
+</table>
+
+<h3>Absorption feature database</h3>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Group</th><th>Key species</th><th>Diagnostic wavelengths (nm)</th></tr>
+  <tr><td>Vegetation pigments</td><td>Chlorophyll a+b, carotenoids, phycocyanin</td><td>430, 480, 620, 665, 710</td></tr>
+  <tr><td>Hemoglobin</td><td>HbO<sub>2</sub> Soret + Q-bands, Hb, MetHb</td><td>415, 542, 560, 577, 630</td></tr>
+  <tr><td>Iron oxides</td><td>Fe<sup>3+</sup> hematite/goethite, Fe<sup>2+</sup> pyroxene/olivine</td><td>490, 530, 700, 900, 1000, 2000</td></tr>
+  <tr><td>Rare earths</td><td>Nd<sup>3+</sup> (4 lines), Sm<sup>3+</sup>/Er<sup>3+</sup>, Pr<sup>3+</sup></td><td>525, 580, 745, 800, 867, 940</td></tr>
+  <tr><td>Other metals</td><td>Cu<sup>2+</sup>, Cr<sup>3+</sup>, Co<sup>2+</sup>, Mn<sup>2+</sup></td><td>435, 460, 550, 630, 700</td></tr>
+  <tr><td>Water / ice</td><td>Liquid H<sub>2</sub>O, structural OH, ice</td><td>970, 1200, 1380, 1450, 1940, 2000</td></tr>
+  <tr><td>Clay minerals</td><td>Al-OH, Mg-OH, NH<sub>4</sub><sup>+</sup></td><td>1410, 2160, 2200, 2250, 2310</td></tr>
+  <tr><td>Carbonates</td><td>CO<sub>3</sub><sup>2−</sup> (calcite, dolomite)</td><td>2120, 2330, 2350, 2500</td></tr>
+  <tr><td>Sulphates</td><td>Gypsum, alunite, jarosite</td><td>1450, 1490, 1750, 2210, 2265</td></tr>
+  <tr><td>Organics</td><td>Cellulose, lignin, lipid, protein, starch</td><td>1210, 1480, 1680, 1720, 2054, 2100</td></tr>
+  <tr><td>Petroleum / coal</td><td>CH overtones, aromatic CH</td><td>1210, 1720, 2300, 2310</td></tr>
+  <tr><td>Polymers</td><td>Polyethylene, polypropylene, nylon</td><td>1150, 1215, 1660, 2310</td></tr>
+  <tr><td>Silicates</td><td>Si-OH, Fe<sup>2+</sup> feldspar</td><td>1250, 1380, 2200</td></tr>
+  <tr><td>Sheet silicates</td><td>Mica, amphibole, serpentine, chlorite, epidote</td><td>2230, 2250, 2310, 2340, 2370</td></tr>
+  <tr><td>Atmospheric refs</td><td>O<sub>2</sub> A/B bands, H<sub>2</sub>O vapour</td><td>690, 760, 820, 940, 1140</td></tr>
+</table>
+
+<h2>NOTES</h2>
+
+<h3>Input requirements</h3>
+
+<p>The module expects a 3D raster map created by <em>i.hyper.import</em> or any
+3D raster with wavelength metadata in one of the two supported formats:</p>
+
+<ul>
+  <li><b>r3.info history</b> — lines formatted as
+    <code>Band N: WAVELENGTH nm, FWHM: F nm</code> (written by
+    <em>i.hyper.import</em>)</li>
+  <li><b>r.support per-band metadata</b> — fields <code>wavelength=</code>,
+    <code>FWHM=</code>, <code>valid=</code>, <code>unit=</code> in the
+    description of <code>mapname#N</code> rasters</li>
+</ul>
+
+<p>Spectra must be in surface reflectance units (0–1 range).  Apply atmospheric
+correction (e.g., <em>i.hyper.atcorr</em> or <em>i.hyper.smac</em>) before
+using this module.</p>
+
+<h3>Band depth computation</h3>
+
+<p>Band depth for band <em>i</em> at wavelength λ<sub>i</sub> is:</p>
+
+<div class="code"><pre>depth_i = max(0, 1 − R_i / max(R_j  ∀j where |λ_j − λ_i| &lt; 150 nm, j ≠ i))</pre></div>
+
+<p>The continuum is the brightest neighbouring band within the ±150 nm window.
+When no neighbour exists, continuum = 1.0.  Bands with
+<code>depth &lt; min_band_depth</code> are not counted as absorbed.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>depth</th><th>Interpretation</th></tr>
+  <tr><td>0.00</td><td>No absorption</td></tr>
+  <tr><td>0.01–0.03</td><td>Trace / below detection</td></tr>
+  <tr><td>0.03–0.10</td><td>Detectable — default threshold 0.02</td></tr>
+  <tr><td>0.10–0.30</td><td>Moderate; most composite rules activate here</td></tr>
+  <tr><td>&gt; 0.30</td><td>Strong; nearly pure mineral or dense canopy</td></tr>
+</table>
+
+<h3>Composite scoring</h3>
+
+<p>Each composite rule defines a <code>base_score</code> (0–1) and lists of
+required and optional bonus species.  When all required species are detected:</p>
+
+<div class="code"><pre>score = min(1.0, base_score × (1.0 + 0.05 × bonus_count))</pre></div>
+
+<p>where <code>bonus_count</code> is the number of bonus species also detected.
+Rules with <code>required_absent</code> species fail if any of those species
+are detected at the pixel.</p>
+
+<h3>Band slice extraction</h3>
+
+<p>All Z-slices are extracted via <code>Rast3d_extract_z_slice()</code> from
+the GRASS raster3d library (<code>libgrass_g3d</code>), which opens the 3D map
+with <code>RASTER3D_NO_CACHE</code> and calls <code>Rast3d_get_block()</code>
+in tile-bulk mode.  Each tile at the target depth is loaded exactly once from
+disk, compared to one function call per voxel in the default cache-based API.</p>
+
+<h3>Atmospheric contamination flag</h3>
+
+<p>If bands matching O<sub>2</sub> A/B-band (690, 760 nm) or H<sub>2</sub>O
+atmospheric (820, 940, 1140 nm) absorptions are detected above
+<code>min_band_depth</code>, a warning is issued advising verification of
+atmospheric correction.</p>
+
+<h3>SWIR overlap warning</h3>
+
+<p>When features are detected in the 2280–2390 nm zone and multiple competing
+species (carbonate CO<sub>3</sub>, CH hydrocarbon, Mg-OH) are matched, a
+disambiguation warning is issued.  Use FWHM as a discriminant: narrow features
+(&lt; 30 nm) indicate organic CH, broad features (&gt; 80 nm) indicate minerals.</p>
+
+<h3>Flags</h3>
+
+<p>The <b>-n</b> flag restricts processing to only bands marked as
+<code>valid=1</code> in metadata.  Useful for excluding atmospheric water vapour
+absorption bands flagged during import.</p>
+
+<p>The <b>-i</b> flag prints the band wavelength table and exits without
+processing any raster data.  Use this first to verify sensor coverage and
+metadata completeness.</p>
+
+<p>The <b>-p</b> flag activates point mode.  A <code>coordinates=east,north</code>
+value is required.  The spectrum at the specified location is extracted and the
+full interpretation engine runs on that single pixel.</p>
+
+<p>The <b>-v</b> flag prints the full hypothesis ranking in point mode.  Without
+<b>-v</b>, only the top 8 hypotheses are shown.</p>
+
+<h3>Output metadata</h3>
+
+<p>The class map (<code>output</code>) receives category labels automatically
+via <b>r.category</b>, one label per class code.  Both output maps receive
+descriptive metadata via <b>r.support</b>.  The confidence map receives a
+<code>plasma</code> colour table via <b>r.colors</b>.</p>
+
+<h3>Limitations</h3>
+
+<ul>
+  <li>Classification accuracy depends strongly on spectral coverage.
+    VNIR-only sensors miss clay, carbonate, and hydroxyl features
+    (&gt; 1400 nm).</li>
+  <li>Spectra must be in surface reflectance (0–1).  Radiance or DN inputs
+    produce invalid results.</li>
+  <li>The ±150 nm continuum window may blend closely spaced features (e.g.,
+    the 2330/2350 nm carbonate doublet).</li>
+  <li>Dense vegetation with strong water absorption may trigger multiple
+    competing hypotheses with similar scores.</li>
+  <li>The chrysotile_asbestos class (27) requires both 2320 nm and 2370 nm
+    Mg-OH features; low SWIR2 SNR may miss it.</li>
+</ul>
+
+<h2>EXAMPLES</h2>
+
+<div class="code"><pre>
+# Check band wavelengths and metadata before processing
+i.hyper.spectroscopy input=enmap_boa -i
+</pre></div>
+
+<div class="code"><pre>
+# Full-map classification: dominant class + confidence
+i.hyper.spectroscopy input=enmap_boa \
+                     output=enmap_class \
+                     confidence=enmap_conf
+</pre></div>
+
+<div class="code"><pre>
+# Use only valid bands, lower detection threshold for subtle features
+i.hyper.spectroscopy input=enmap_boa \
+                     output=enmap_class \
+                     confidence=enmap_conf \
+                     min_band_depth=0.01 \
+                     -n
+</pre></div>
+
+<div class="code"><pre>
+# Point-mode interpretation at a known mineral outcrop
+i.hyper.spectroscopy input=enmap_boa \
+                     coordinates=450320,5317880 \
+                     -p -v
+</pre></div>
+
+<div class="code"><pre>
+# Typical full workflow from import to classification
+# 1. Import
+i.hyper.import input=/data/ENMAP_L2A.hdf product=enmap output=enmap
+
+# 2. Atmospheric correction
+i.hyper.smac input=enmap output=enmap_boa
+
+# 3. Continuum removal (optional — sharpens absorption depths)
+i.hyper.continuum input=enmap_boa output=enmap_cr
+
+# 4. Classify
+i.hyper.spectroscopy input=enmap_cr \
+                     output=enmap_class \
+                     confidence=enmap_conf \
+                     -n
+
+# 5. Visualise
+d.rast map=enmap_class
+d.legend map=enmap_class
+r.univar map=enmap_conf zones=enmap_class
+</pre></div>
+
+<div class="code"><pre>
+# Extract pixels classified as chrysotile asbestos (class 27)
+r.mapcalc expression="asbestos_mask = if(enmap_class == 27, 1, null())"
+r.colors map=asbestos_mask color=reds
+r.stats -a input=asbestos_mask
+</pre></div>
+
+<div class="code"><pre>
+# Combine spectroscopy with geology for confirmed argillic alteration
+i.hyper.geology input=enmap_cr \
+                output_alteration=enmap_alteration
+
+r.mapcalc expression="argillic_confirmed = \
+    if(enmap_class == 6 &amp;&amp; enmap_alteration == 4, 1, null())"
+</pre></div>
+
+<h2>SEE ALSO</h2>
+
+<a href="i.hyper.import.html">i.hyper.import</a>,
+<a href="i.hyper.geology.html">i.hyper.geology</a>,
+<a href="i.hyper.continuum.html">i.hyper.continuum</a>,
+<a href="i.hyper.indices.html">i.hyper.indices</a>,
+<a href="i.hyper.atcorr.html">i.hyper.atcorr</a>,
+<a href="i.hyper.smac.html">i.hyper.smac</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.mapcalc.html">r.mapcalc</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.category.html">r.category</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.colors.html">r.colors</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.univar.html">r.univar</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r3.info.html">r3.info</a>
+
+<h2>REFERENCES</h2>
+
+<ul>
+  <li>Hunt, G. R. (1977). Spectral signatures of particulate minerals in the
+    visible and near infrared. <em>Geophysics</em>, 42(3), 501–513.</li>
+  <li>Clark, R. N., et al. (1990). High spectral resolution reflectance
+    spectroscopy of minerals. <em>Journal of Geophysical Research: Solid
+    Earth</em>, 95(B8), 12653–12680.</li>
+  <li>Kokaly, R. F., et al. (2017). USGS Spectral Library Version 7.
+    U.S. Geological Survey Data Series 1035.
+    <a href="https://doi.org/10.3133/ds1035">doi:10.3133/ds1035</a></li>
+  <li>Clevers, J. G. P. W., &amp; Kooistra, L. (2012). Using hyperspectral
+    remote sensing data for retrieving canopy chlorophyll and nitrogen content.
+    <em>IEEE Journal of Selected Topics in Applied Earth Observations and
+    Remote Sensing</em>, 5(2), 574–583.</li>
+  <li>Vane, G., &amp; Goetz, A. F. H. (1993). Terrestrial imaging spectrometry:
+    current status, future trends. <em>Remote Sensing of Environment</em>,
+    44(2–3), 117–126.</li>
+  <li>Koerting, F., et al. (2024). VNIR-SWIR Imaging Spectroscopy for Mining:
+    Insights for Hyperspectral Drone Applications. <em>Mining</em>, 4, 1013–1057.
+    <a href="https://doi.org/10.3390/mining4040057">doi:10.3390/mining4040057</a></li>
+</ul>
+
+<h2>AUTHORS</h2>
+
+<p>Created for the i.hyper module family (2025).</p>
+
+</body>
+</html>
