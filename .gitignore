@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Pytest
+.pytest_cache/
+.hypothesis/
+
+# GRASS GIS build artefacts
+*.o
+*.so
+*.pyc
+OBJ/
+
+# Editor / OS
+.DS_Store
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
