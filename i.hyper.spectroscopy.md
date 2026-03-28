@@ -193,6 +193,21 @@ The class map (`output`) receives category labels automatically via
 descriptive metadata via **r.support** referencing the input map name.
 The confidence map receives a `plasma` colour table via **r.colors**.
 
+### Testing
+
+The pure-Python interpretation engine can be tested without a running GRASS
+session using the bundled `test_suite.py`:
+
+```bash
+python -m pytest test_suite.py -v
+```
+
+The suite covers 41 tests across database integrity, `_band_depth()`,
+`interpret_spectrum()` (edge cases and physics-based synthetic spectra for
+green vegetation, liquid water, kaolinite, and stressed vegetation),
+`_compute_depths_numpy()`, `_build_band_species_index()`,
+`score_composites_numpy()`, and chromophore confidence scaling.
+
 ### Limitations
 
 - Classification accuracy depends strongly on spectral coverage.  VNIR-only

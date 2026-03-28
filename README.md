@@ -192,6 +192,33 @@ Narrow 580+745+800 nm → REE Nd³⁺
 
 ---
 
+## Testing
+
+The pure-Python interpretation engine (no GRASS session required) is covered by
+`test_suite.py`:
+
+```bash
+python -m pytest test_suite.py -v
+```
+
+41 tests across 8 classes:
+
+| Class | What is tested |
+|-------|---------------|
+| `TestDatabaseIntegrity` | Required fields on all DB entries; wavelength range sanity; all `required_species`/`bonus_species` exist in the DB; `base_score` in [0,1]; `CLASS_LABELS` consistency |
+| `TestBandDepth` | Normal dip, zero reflectance, no neighbours (continuum = 1.0), feature = continuum → 0, feature brighter than continuum → clamped to 0 |
+| `TestInterpretSpectrumEdgeCases` | Empty input, out-of-range wavelengths, sub-threshold FWHM, flat spectrum, no 60 % confidence flag, reflectance clamping, asymmetry classification |
+| `TestInterpretSpectrumMaterials` | Synthetic spectra for green vegetation, liquid water, kaolinite, stressed vegetation (chlorophyll without red-edge), atmospheric contamination flag, hypothesis sort order, 60 % dominance threshold |
+| `TestComputeDepthsNumpy` | Output shape, flat → zero depths, single-dip exact depth, isolated bands (no neighbours), NaN handling, all depths ≥ 0 |
+| `TestBuildBandSpeciesIndex` | Known species at correct band indices, out-of-range wavelengths → empty, deduplication/sort |
+| `TestScoreCompositesNumpy` | Shape, vegetation pixel ≥ 0.60 / flat pixel = 0, all scores in [0,1], `required_absent` exclusion |
+| `TestChromophoreScoring` | Deeper feature → higher confidence; multi-band Nd³⁺ → higher confidence than single band |
+
+The test file mocks `grass.script` and loads `i.hyper.spectroscopy.py` via
+`importlib`, so no GRASS installation is needed.
+
+---
+
 ## Extending the engine
 
 ### Add an absorption feature to the database

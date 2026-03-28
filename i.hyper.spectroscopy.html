@@ -194,6 +194,22 @@ via <b>r.category</b>, one label per class code.  Both output maps receive
 descriptive metadata via <b>r.support</b>.  The confidence map receives a
 <code>plasma</code> colour table via <b>r.colors</b>.</p>
 
+<h3>Testing</h3>
+
+<p>The pure-Python interpretation engine can be tested without a running GRASS
+session using the bundled <code>test_suite.py</code>:</p>
+
+<div class="code"><pre>python -m pytest test_suite.py -v</pre></div>
+
+<p>The suite provides 41 tests across database integrity,
+<code>_band_depth()</code>, <code>interpret_spectrum()</code> (edge cases and
+physics-based synthetic spectra for green vegetation, liquid water, kaolinite,
+and stressed vegetation), <code>_compute_depths_numpy()</code>,
+<code>_build_band_species_index()</code>, <code>score_composites_numpy()</code>,
+and chromophore confidence scaling.  No GRASS installation is required — the
+test file mocks <code>grass.script</code> and loads the module via
+<code>importlib</code>.</p>
+
 <h3>Limitations</h3>
 
 <ul>
