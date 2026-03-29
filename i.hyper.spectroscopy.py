@@ -118,9 +118,24 @@ _G3D_LIB = None
 
 def _load_g3d_lib():
     """Load libgrass_g3d and set up Rast3d_extract_z_slice() signature."""
-    grass_config = gs.read_command('grass', '--config', 'path').strip()
-    lib_path = os.path.join(grass_config, 'lib', 'libgrass_g3d.so')
-    lib = ctypes.CDLL(lib_path)
+    import subprocess as _sp
+    grass_config = _sp.check_output(['grass', '--config', 'path'],
+                                    text=True).strip()
+    lib_dir = os.path.join(grass_config, 'lib')
+
+    # libgrass_gis must be loaded first so the shared G_* symbol table is
+    # populated; then call G__gisinit() (the real C function behind the
+    # G_gisinit macro) so Rast3d_* functions don't abort with
+    # "Programmer forgot to call G_gisinit()".
+    gis_lib = ctypes.CDLL(os.path.join(lib_dir, 'libgrass_gis.so'),
+                          mode=ctypes.RTLD_GLOBAL)
+    grass_version = _sp.check_output(['grass', '--config', 'version'],
+                                     text=True).strip()
+    gis_lib.G__gisinit.restype = None
+    gis_lib.G__gisinit.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    gis_lib.G__gisinit(grass_version.encode(), b"i.hyper.spectroscopy")
+
+    lib = ctypes.CDLL(os.path.join(lib_dir, 'libgrass_g3d.so'))
     lib.Rast3d_extract_z_slice.restype = ctypes.c_int
     lib.Rast3d_extract_z_slice.argtypes = [
         ctypes.c_char_p,   # name3d
