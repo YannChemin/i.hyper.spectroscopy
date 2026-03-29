@@ -492,5 +492,179 @@ class TestChromophoreScoring:
             assert nd_m.confidence >= nd_s.confidence
 
 
+# ===========================================================================
+# 8. New material classes (DB expansion)
+# ===========================================================================
+
+class TestNewMaterialClasses:
+    """Physics-based tests for classes added in the DB expansion."""
+
+    def test_pyrophyllite_not_kaolinite(self):
+        # Al-OH_pyrophyllite @ 2165nm (range 2150-2181) + 1390nm (range 1378-1403)
+        # required_absent: Al-OH_clay (1395-1430) — kaolinite band must NOT be present
+        triplets = [
+            (1300, 20, 0.70),  # continuum
+            (1390, 10, 0.48),  # Al-OH_pyrophyllite overtone (blueshifted vs kaolinite 1410nm)
+            (1500, 20, 0.70),  # continuum
+            (2100, 20, 0.70),  # continuum
+            (2165, 15, 0.42),  # Al-OH_pyrophyllite combination
+            (2300, 20, 0.70),  # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "pyrophyllite" in hyp_names, (
+            f"Expected pyrophyllite, got: {hyp_names[:6]}"
+        )
+        assert "kaolinite" not in hyp_names, (
+            "Kaolinite should not fire without Al-OH_clay 1410nm band"
+        )
+
+    def test_ferrihydrite_doublet(self):
+        # ferrihydrite @ 430nm (400-465) + 750nm (700-810)
+        triplets = [
+            (430, 80, 0.10),   # ferrihydrite broad Fe3+
+            (600, 20, 0.50),   # continuum
+            (750, 80, 0.25),   # ferrihydrite 2nd feature
+            (900, 20, 0.55),   # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "ferrihydrite" in hyp_names, (
+            f"Expected ferrihydrite, got: {hyp_names[:6]}"
+        )
+
+    def test_PVC_plastic(self):
+        # PVC_CH2 @ 1730nm (1712-1750) + PVC_CCl @ 2030nm (2010-2058)
+        triplets = [
+            (1600, 20, 0.80),  # continuum
+            (1730, 30, 0.50),  # PVC_CH2
+            (1870, 20, 0.80),  # continuum
+            (2030, 40, 0.45),  # PVC_CCl (unique C-Cl band)
+            (2150, 20, 0.80),  # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "PVC_plastic" in hyp_names, (
+            f"Expected PVC_plastic, got: {hyp_names[:6]}"
+        )
+
+    def test_PET_plastic(self):
+        # PET_CH @ 1730nm (1713-1750) + PET_aromatic @ 2170nm (2155-2188)
+        triplets = [
+            (1600, 20, 0.80),  # continuum
+            (1730, 30, 0.50),  # PET_CH
+            (1900, 20, 0.80),  # continuum
+            (2170, 35, 0.48),  # PET_aromatic
+            (2300, 20, 0.80),  # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "PET_plastic" in hyp_names, (
+            f"Expected PET_plastic, got: {hyp_names[:6]}"
+        )
+
+    def test_gibbsite_doublet(self):
+        # gibbsite @ 2263nm (2248-2279) + 2387nm (2372-2403)
+        triplets = [
+            (2150, 20, 0.70),  # continuum
+            (2263, 25, 0.42),  # gibbsite band 1
+            (2320, 20, 0.70),  # continuum
+            (2387, 25, 0.43),  # gibbsite band 2
+            (2450, 20, 0.70),  # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "gibbsite_laterite" in hyp_names, (
+            f"Expected gibbsite_laterite, got: {hyp_names[:6]}"
+        )
+
+    def test_crocidolite_not_chrysotile(self):
+        # crocidolite_Fe-OH @ 2320nm (2302-2342) + crocidolite_Fe3+ @ 440nm (420-463)
+        # Discrimination: Fe3+ 440nm band is present in crocidolite, absent in chrysotile
+        triplets_croc = [
+            (440, 60, 0.25),   # crocidolite Fe3+ broad (absent in chrysotile)
+            (600, 20, 0.70),   # continuum
+            (2200, 20, 0.70),  # continuum
+            (2320, 35, 0.42),  # crocidolite Fe-OH
+            (2450, 20, 0.70),  # continuum
+        ]
+        result = interpret_spectrum(triplets_croc)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "crocidolite_asbestos" in hyp_names, (
+            f"Expected crocidolite_asbestos, got: {hyp_names[:6]}"
+        )
+        # chrysotile must NOT fire: it requires Mg-OH_chrysotile + Mg-OH_antigorite;
+        # the 2320nm feature activates Mg-OH_chrysotile but the antigorite band (2370nm)
+        # is absent here, so chrysotile_asbestos composite rule cannot fire.
+        assert "chrysotile_asbestos" not in hyp_names
+
+    def test_acid_mine_drainage(self):
+        # ferrihydrite (both bands) + jarosite @ 2265nm (2250-2285)
+        triplets = [
+            (430, 80, 0.08),   # ferrihydrite Fe3+
+            (600, 20, 0.40),   # continuum
+            (750, 80, 0.18),   # ferrihydrite 2nd
+            (900, 20, 0.42),   # continuum
+            (2200, 20, 0.42),  # continuum
+            (2265, 30, 0.28),  # jarosite Fe-OH
+            (2400, 20, 0.42),  # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "acid_mine_drainage" in hyp_names, (
+            f"Expected acid_mine_drainage, got: {hyp_names[:8]}"
+        )
+
+    def test_talc_doublet(self):
+        # talc_Mg-OH @ 2315nm (2298-2333) + 2390nm (2375-2407)
+        triplets = [
+            (2200, 20, 0.70),  # continuum
+            (2315, 25, 0.44),  # talc Mg-OH band 1
+            (2355, 20, 0.70),  # continuum
+            (2390, 25, 0.44),  # talc Mg-OH band 2
+            (2450, 20, 0.70),  # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "talc" in hyp_names, (
+            f"Expected talc, got: {hyp_names[:6]}"
+        )
+
+    def test_phycoerythrin_doublet(self):
+        # phycoerythrin @ 545nm (530-560) + 495nm (483-510)
+        triplets = [
+            (450, 20, 0.70),   # continuum
+            (495, 20, 0.40),   # phycoerythrin 2nd band
+            (545, 20, 0.35),   # phycoerythrin dominant band
+            (620, 20, 0.70),   # continuum
+        ]
+        result = interpret_spectrum(triplets)
+        hyp_names = [h.name for h in result.hypotheses]
+        assert "phycoerythrin_algae" in hyp_names, (
+            f"Expected phycoerythrin_algae, got: {hyp_names[:6]}"
+        )
+
+    def test_new_classes_db_integrity(self):
+        """All new required/bonus species names must resolve in the DB."""
+        db_species = {e["species"] for e in SPECTRAL_FEATURES_DB}
+        new_rule_names = {
+            "anthocyanin_stress", "phycoerythrin_algae", "cyanobacteria_bloom",
+            "diatom_bloom", "ferrihydrite", "lepidocrocite_soil",
+            "acid_mine_drainage", "siderite", "REE_erbium", "REE_dysprosium",
+            "REE_ytterbium", "REE_holmium", "pyrophyllite", "gibbsite_laterite",
+            "boehmite_bauxite", "halloysite", "talc", "epsomite", "kieserite",
+            "szomolnokite", "prehnite", "schorl_tourmaline", "crocidolite_asbestos",
+            "ankerite", "PET_plastic", "PVC_plastic", "polystyrene",
+            "rubber_polyisoprene", "concrete_urban", "asphalt_bitumen",
+        }
+        for rule in COMPOSITE_RULES:
+            if rule["name"] not in new_rule_names:
+                continue
+            for sp in rule["required_species"] + rule.get("bonus_species", []):
+                assert sp in db_species, (
+                    f"New rule '{rule['name']}': species '{sp}' missing from DB"
+                )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

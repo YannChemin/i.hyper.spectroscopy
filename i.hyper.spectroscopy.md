@@ -6,9 +6,9 @@ of hyperspectral imagery imported as 3D raster maps (`raster_3d`) by
 
 The module reads wavelength metadata from hyperspectral 3D raster bands,
 computes local band depths across the VNIR-SWIR range (400–2500 nm), matches
-detected absorption features to a physics-based database of 70+ absorbing
-species, and scores 28 composite material hypotheses per pixel.  Two output
-rasters are produced: a dominant-class integer map and a confidence map.
+detected absorption features to a physics-based database of **163 absorbing
+species entries**, and scores **58 composite material hypotheses** per pixel.
+Two output rasters are produced: a dominant-class integer map and a confidence map.
 
 *i.hyper.spectroscopy* is part of the **i.hyper** module family.
 
@@ -64,28 +64,68 @@ where all composite scores fall below 0.10 receive class 0 (unknown).
 | 26 | propylitic\_alteration | geological |
 | 27 | chrysotile\_asbestos | mineral |
 | 28 | starch\_food\_grain | biologic |
+| 29 | anthocyanin\_stress | biologic |
+| 30 | phycoerythrin\_algae | biologic |
+| 31 | cyanobacteria\_bloom | biologic |
+| 32 | diatom\_bloom | biologic |
+| 33 | ferrihydrite | mineral |
+| 34 | lepidocrocite\_soil | mineral |
+| 35 | acid\_mine\_drainage | geological |
+| 36 | siderite | mineral |
+| 37 | REE\_erbium | mineral |
+| 38 | REE\_dysprosium | mineral |
+| 39 | REE\_ytterbium | mineral |
+| 40 | REE\_holmium | mineral |
+| 41 | pyrophyllite | mineral |
+| 42 | gibbsite\_laterite | mineral |
+| 43 | boehmite\_bauxite | mineral |
+| 44 | halloysite | mineral |
+| 45 | talc | mineral |
+| 46 | epsomite | mineral |
+| 47 | kieserite | mineral |
+| 48 | szomolnokite | mineral |
+| 49 | prehnite | mineral |
+| 50 | schorl\_tourmaline | mineral |
+| 51 | crocidolite\_asbestos | mineral |
+| 52 | ankerite | mineral |
+| 53 | PET\_plastic | synthetic |
+| 54 | PVC\_plastic | synthetic |
+| 55 | polystyrene | synthetic |
+| 56 | rubber\_polyisoprene | synthetic |
+| 57 | concrete\_urban | urban |
+| 58 | asphalt\_bitumen | urban |
 
 ### Absorption feature database
 
-The built-in database covers 70+ entries across the full VNIR-SWIR range:
+The built-in database covers **163 entries** across the full VNIR-SWIR range:
 
 | Group | Key species | Diagnostic wavelengths (nm) |
 |-------|-------------|------------------------------|
 | Vegetation pigments | Chlorophyll a+b, carotenoids, phycocyanin | 430, 480, 620, 665, 710 |
+| Stress pigments | Anthocyanins, zeaxanthin/PRI | 531, 540 |
+| Aquatic pigments | Phycoerythrin, allophycocyanin, fucoxanthin | 490, 495, 545, 650 |
 | Hemoglobin | HbO2 Soret + Q-bands, Hb, MetHb | 415, 542, 560, 577, 630 |
-| Iron oxides | Fe3+ hematite/goethite, Fe2+ pyroxene/olivine | 490, 530, 700, 900, 1000, 2000 |
+| Iron oxides (common) | Fe3+ hematite/goethite, Fe2+ pyroxene/olivine | 490, 530, 700, 900, 1000, 2000 |
+| Iron oxides (expanded) | Ferrihydrite, lepidocrocite, siderite FeCO3 | 430, 475, 750, 1000, 1080, 2340 |
 | Rare earths | Nd3+ (4 lines), Sm3+/Er3+, Pr3+ | 525, 580, 745, 800, 867, 940 |
+| REE expanded | Dy3+, Yb3+, Er3+ (3 lines), Ho3+, Eu3+, Tb3+, Ce3+ | 400, 450, 490, 535, 537, 650, 910, 975, 1260, 1530 |
 | Other metals | Cu2+, Cr3+, Co2+, Mn2+ | 435, 460, 550, 630, 700 |
 | Water / ice | Liquid H2O, structural OH, ice | 970, 1200, 1380, 1450, 1940, 2000 |
-| Clay minerals | Al-OH, Mg-OH, NH4+ | 1410, 2160, 2200, 2250, 2310 |
-| Carbonates | CO3 (calcite, dolomite) | 2120, 2330, 2350, 2500 |
-| Sulphates | Gypsum, alunite, jarosite | 1450, 1490, 1750, 2210, 2265 |
+| Clay minerals (common) | Al-OH, Mg-OH, NH4+ | 1410, 2160, 2200, 2250, 2310 |
+| Clay minerals (expanded) | Pyrophyllite, gibbsite, boehmite, halloysite, phengite, palygorskite, sepiolite, talc | 1390, 2110, 2165, 2175, 2205, 2215, 2263, 2315, 2387, 2390 |
+| Carbonates | CO3 calcite/dolomite/ankerite/siderite | 2120, 2320, 2330, 2335, 2350, 2500 |
+| Sulphates (common) | Gypsum, alunite, jarosite | 1450, 1490, 1750, 2210, 2265 |
+| Sulphates (expanded) | Epsomite, bassanite, kieserite, szomolnokite | 1000, 1490, 1640, 2165, 2200, 2220 |
 | Organics | Cellulose, lignin, lipid, protein, starch | 1210, 1480, 1680, 1720, 2054, 2100 |
 | Petroleum / coal | CH overtones, aromatic CH | 1210, 1720, 2300, 2310 |
-| Polymers | Polyethylene, polypropylene, nylon | 1150, 1215, 1660, 2310 |
+| Polymers (common) | Polyethylene, polypropylene, nylon | 1150, 1215, 1660, 2310 |
+| Polymers (expanded) | PET, PVC, polystyrene, rubber | 1640, 1680, 1720, 1730, 2030, 2170, 2240 |
 | Silicates | Si-OH, Fe2+ feldspar | 1250, 1380, 2200 |
 | Sheet silicates | Mica, amphibole, serpentine, chlorite, epidote | 2230, 2250, 2310, 2340, 2370 |
+| Geological minerals | Prehnite, schorl/tourmaline, crocidolite | 440, 1490, 2120, 2243, 2320 |
+| Urban materials | Portlandite Ca(OH)2 (hardened cement) | 1460 |
 | Atmospheric refs | O2 A/B bands, H2O vapour | 690, 760, 820, 940, 1140 |
+| Soil nutrients | Nitrate NO3-, ammonium NH4+ (2nd band) | 1410, 1560, 2050 |
 
 ## NOTES
 
@@ -202,11 +242,13 @@ session using the bundled `test_suite.py`:
 python -m pytest test_suite.py -v
 ```
 
-The suite covers 41 tests across database integrity, `_band_depth()`,
+The suite covers **51 tests** across database integrity, `_band_depth()`,
 `interpret_spectrum()` (edge cases and physics-based synthetic spectra for
-green vegetation, liquid water, kaolinite, and stressed vegetation),
-`_compute_depths_numpy()`, `_build_band_species_index()`,
-`score_composites_numpy()`, and chromophore confidence scaling.
+green vegetation, liquid water, kaolinite, stressed vegetation, and new
+classes), `_compute_depths_numpy()`, `_build_band_species_index()`,
+`score_composites_numpy()`, chromophore confidence scaling, and targeted
+tests for new classes (pyrophyllite, ferrihydrite, PVC, PET, gibbsite,
+crocidolite, acid mine drainage, talc, phycoerythrin).
 
 ### Limitations
 

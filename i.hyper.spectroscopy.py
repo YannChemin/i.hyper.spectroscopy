@@ -650,6 +650,289 @@ SPECTRAL_FEATURES_DB: list[dict] = [
     {"center": 2300, "range": (2285, 2320), "species": "coal_CH_combo",
      "mechanism": "CH_combination", "tags": ["organic", "coal"],
      "notes": "CH combination; diagnostic of coal"},
+
+    # ── STRESS PIGMENTS & AQUATIC PHYTOPLANKTON ───────────────────────────
+
+    # Anthocyanins / zeaxanthin (vegetation stress indicators)
+    {"center": 540,  "range": (510, 575), "species": "anthocyanins",
+     "mechanism": "π→π*_flavylium_cation", "tags": ["vegetation", "biologic", "stress"],
+     "notes": "Leaf anthocyanin; stress/UV-protection/senescence pigment; broad; Gitelson et al. 2001 RSE"},
+    {"center": 531,  "range": (525, 538), "species": "zeaxanthin_PRI",
+     "mechanism": "xanthophyll_de-epoxidation", "tags": ["vegetation", "biologic", "stress"],
+     "notes": "PRI 531nm; zeaxanthin increases under light/heat stress; very narrow vs carotenoid broadband; Gamon et al. 1992"},
+
+    # Aquatic phytoplankton pigments
+    {"center": 545,  "range": (530, 560), "species": "phycoerythrin",
+     "mechanism": "π→π*_phycoerythrobilin", "tags": ["algae", "biologic", "aquatic"],
+     "notes": "Phycoerythrin dominant band; red algae + PE-type cyanobacteria; doublet 495+545nm; Simis et al. 2005 RSE"},
+    {"center": 495,  "range": (483, 510), "species": "phycoerythrin",
+     "mechanism": "π→π*_phycourobilin", "tags": ["algae", "biologic", "aquatic"],
+     "notes": "Phycoerythrin 2nd band (phycourobilin type); doublet 495+545nm = phycoerythrin signature"},
+    {"center": 650,  "range": (640, 662), "species": "allophycocyanin",
+     "mechanism": "π→π*_phycocyanobilin", "tags": ["cyanobacteria", "algae", "biologic", "aquatic"],
+     "notes": "Allophycocyanin APC; 650nm distinct from phycocyanin 620nm; terminal energy-transfer pigment"},
+    {"center": 490,  "range": (472, 508), "species": "fucoxanthin",
+     "mechanism": "π→π*_carotenoid_diatom", "tags": ["algae", "biologic", "aquatic", "diatom"],
+     "notes": "Fucoxanthin in diatoms and brown algae; paired with Chl-a 665nm confirms diatom bloom; Babin et al. 2003 JGR"},
+
+    # ── IRON MINERALOGY EXPANSION ─────────────────────────────────────────
+
+    # Ferrihydrite (poorly crystalline Fe3+ oxyhydroxide)
+    {"center": 430,  "range": (400, 465), "species": "ferrihydrite",
+     "mechanism": "crystal_field_Fe3+_LMCT", "tags": ["mineral", "geological", "soil", "mine_drainage"],
+     "notes": "Ferrihydrite broad Fe3+ + LMCT; blueshifted vs hematite 530nm; AMD indicator; Sherman & Waite 1985"},
+    {"center": 750,  "range": (700, 810), "species": "ferrihydrite",
+     "mechanism": "crystal_field_Fe3+_2nd", "tags": ["mineral", "geological", "soil", "mine_drainage"],
+     "notes": "Second ferrihydrite feature; 430+750nm pair distinguishes from goethite/hematite; Schwertmann & Cornell 2000"},
+
+    # Lepidocrocite γ-FeOOH
+    {"center": 475,  "range": (455, 498), "species": "lepidocrocite",
+     "mechanism": "crystal_field_6A1→4T2", "tags": ["mineral", "geological", "soil"],
+     "notes": "γ-FeOOH lepidocrocite; blueshifted ~15nm vs goethite 490nm; waterlogged/gleyed soils; Scheinost et al. 1998"},
+    {"center": 1000, "range": (985, 1020), "species": "lepidocrocite",
+     "mechanism": "crystal_field_Fe3+_NIR", "tags": ["mineral", "geological", "soil"],
+     "notes": "Lepidocrocite NIR feature; 475+1000nm pair confirms lepidocrocite over goethite"},
+
+    # Siderite FeCO3
+    {"center": 1080, "range": (980, 1180), "species": "siderite_Fe2+",
+     "mechanism": "crystal_field_5T2→5E_carbonate", "tags": ["mineral", "geological", "carbonate"],
+     "notes": "Siderite FeCO3 very broad Fe2+ band FWHM ~200nm; reducing/anoxic sedimentary facies; Hunt & Salisbury 1971"},
+    {"center": 2340, "range": (2323, 2358), "species": "siderite_CO3",
+     "mechanism": "CO3_combination_Fe", "tags": ["mineral", "geological", "carbonate"],
+     "notes": "Siderite CO3 combination; slightly shifted vs calcite; paired with broad Fe2+ confirms siderite"},
+
+    # ── RARE EARTH ELEMENTS EXPANSION ────────────────────────────────────
+
+    # Dysprosium Dy3+
+    {"center": 910,  "range": (903, 920), "species": "Dy3+",
+     "mechanism": "4f_intraconfigurational", "tags": ["REE", "mineral", "geological"],
+     "notes": "Dy3+ HREE; narrow 4f at 910nm; verify narrow FWHM vs broad H2O atmospheric; Rowan et al. 1986 Econ. Geol."},
+    {"center": 1260, "range": (1252, 1271), "species": "Dy3+",
+     "mechanism": "4f", "tags": ["REE", "mineral"],
+     "notes": "Second Dy3+ band; 910+1260nm doublet = dysprosium signature; Turner et al. 2014 Geophysics"},
+
+    # Ytterbium Yb3+
+    {"center": 975,  "range": (968, 983), "species": "Yb3+",
+     "mechanism": "4f_2F7/2→2F5/2", "tags": ["REE", "mineral", "geological"],
+     "notes": "Yb3+ very narrow 4f; FWHM <15nm distinguishes from broad H2O atmospheric at 970nm; Rowan et al. 1986"},
+
+    # Erbium Er3+ (additional bands beyond Sm3+_or_Er3+ at 525nm)
+    {"center": 650,  "range": (642, 660), "species": "Er3+",
+     "mechanism": "4f", "tags": ["REE", "mineral"],
+     "notes": "Er3+ VIS band 650nm; narrow FWHM <20nm vs chlorophyll_a broad Qy; Cloutis et al. 2002 JGR"},
+    {"center": 975,  "range": (968, 983), "species": "Er3+",
+     "mechanism": "4f", "tags": ["REE", "mineral"],
+     "notes": "Er3+ NIR; paired with 650nm and 1530nm confirms erbium over Yb3+"},
+    {"center": 1530, "range": (1520, 1545), "species": "Er3+",
+     "mechanism": "4f_4I13/2→4I15/2", "tags": ["REE", "mineral"],
+     "notes": "Er3+ 1530nm telecom band; highly diagnostic; unique in SWIR; Cloutis et al. 2002"},
+
+    # Holmium Ho3+
+    {"center": 450,  "range": (442, 460), "species": "Ho3+",
+     "mechanism": "4f_intraconfigurational", "tags": ["REE", "mineral"],
+     "notes": "Ho3+ first 4f band; doublet with 537nm; USGS Spectral Library v7"},
+    {"center": 537,  "range": (529, 546), "species": "Ho3+",
+     "mechanism": "4f", "tags": ["REE", "mineral"],
+     "notes": "Ho3+ second band; 450+537nm doublet = holmium signature"},
+
+    # Europium Eu3+
+    {"center": 535,  "range": (528, 543), "species": "Eu3+",
+     "mechanism": "4f_7F0→5D1", "tags": ["REE", "mineral"],
+     "notes": "Eu3+ very narrow 8nm band; requires high-resolution sensor (>5nm sampling); USGS Spec. Lib. v7"},
+
+    # Terbium Tb3+
+    {"center": 490,  "range": (483, 498), "species": "Tb3+",
+     "mechanism": "4f_intraconfigurational", "tags": ["REE", "mineral"],
+     "notes": "Tb3+ narrow 4f; overlaps Fe3+ goethite and fucoxanthin — requires FWHM <12nm; Turner et al. 2014"},
+
+    # Cerium Ce3+
+    {"center": 400,  "range": (390, 435), "species": "Ce3+",
+     "mechanism": "4f→5d_charge_transfer", "tags": ["REE", "mineral", "geological"],
+     "notes": "Ce3+ 4f→5d CT; broad UV edge; band onset in 400–430nm; Ce-rich carbonatite/monazite; Rowan et al. 1986"},
+
+    # ── CLAY / PHYLLOSILICATE EXPANSION ──────────────────────────────────
+
+    # Pyrophyllite Al2Si4O10(OH)2
+    {"center": 2165, "range": (2150, 2181), "species": "Al-OH_pyrophyllite",
+     "mechanism": "Al-OH_combination", "tags": ["clay", "mineral", "geological", "altered"],
+     "notes": "Pyrophyllite 2165nm; 35nm BLUESHIFTED vs kaolinite 2200nm; epithermal acid-sulfate; Chabrillat et al. 2002"},
+    {"center": 1390, "range": (1378, 1403), "species": "Al-OH_pyrophyllite",
+     "mechanism": "Al-OH_overtone", "tags": ["clay", "mineral", "geological"],
+     "notes": "Pyrophyllite 1390nm OH overtone; narrower and blueshifted vs kaolinite Al-OH_clay 1410nm"},
+
+    # Gibbsite Al(OH)3
+    {"center": 2263, "range": (2248, 2279), "species": "gibbsite",
+     "mechanism": "Al-OH_combination", "tags": ["mineral", "geological", "soil", "laterite"],
+     "notes": "Gibbsite Al(OH)3 2263nm; distinct from kaolinite 2200nm; tropical laterite indicator; Clark et al. 1990"},
+    {"center": 2387, "range": (2372, 2403), "species": "gibbsite",
+     "mechanism": "Al-OH_combination_2nd", "tags": ["mineral", "geological", "soil", "laterite"],
+     "notes": "Second gibbsite band; 2263+2387nm doublet = gibbsite signature; deep weathering profile mapping"},
+
+    # Boehmite / diaspore AlOOH
+    {"center": 2175, "range": (2160, 2191), "species": "boehmite",
+     "mechanism": "Al-OH_combination", "tags": ["mineral", "geological", "bauxite"],
+     "notes": "Boehmite/diaspore AlOOH 2175nm; distinct from gibbsite 2263nm and kaolinite 2200nm; USGS Spec. Lib. v7"},
+    {"center": 2110, "range": (2095, 2128), "species": "boehmite",
+     "mechanism": "Al-OH_combination_2nd", "tags": ["mineral", "geological", "bauxite"],
+     "notes": "Second boehmite feature; doublet 2175+2110nm confirms boehmite over kaolinite; bauxite horizon"},
+
+    # Halloysite Al2Si2O5(OH)4 (hydrated kaolinite)
+    {"center": 2205, "range": (2190, 2221), "species": "halloysite",
+     "mechanism": "Al-OH_combination", "tags": ["clay", "mineral", "geological"],
+     "notes": "Halloysite Al-OH 2205nm; slightly shifted/broader vs kaolinite 2200nm; interlayer water diagnostic"},
+
+    # Phengite (Si-rich muscovite)
+    {"center": 2215, "range": (2205, 2228), "species": "phengite_Al-OH",
+     "mechanism": "Al-OH_combination_Si-rich", "tags": ["mineral", "geological", "mica"],
+     "notes": "Phengite 2215nm; shifted vs muscovite 2200nm by Si→Al substitution; porphyry ore pathfinder; Duke 1994"},
+
+    # Palygorskite / attapulgite
+    {"center": 2200, "range": (2183, 2218), "species": "palygorskite",
+     "mechanism": "Al-Mg-OH_combination", "tags": ["clay", "mineral", "geological"],
+     "notes": "Palygorskite/attapulgite Al-Mg-OH fibrous clay; arid climate paleosol indicator; Chabrillat et al. 2002"},
+    {"center": 1415, "range": (1403, 1432), "species": "palygorskite",
+     "mechanism": "structural_H2O_channel", "tags": ["clay", "mineral", "geological"],
+     "notes": "Palygorskite channel water 1415nm; slightly shifted from kaolinite Al-OH_clay 1410nm"},
+
+    # Sepiolite Mg4Si6O15(OH)2
+    {"center": 2310, "range": (2294, 2328), "species": "sepiolite_Mg-OH",
+     "mechanism": "Mg-OH_combination", "tags": ["clay", "mineral", "geological"],
+     "notes": "Sepiolite Mg-OH fibrous clay 2310nm; arid lacustrine; Chabrillat et al. 2002"},
+    {"center": 1450, "range": (1433, 1470), "species": "sepiolite_H2O",
+     "mechanism": "zeolitic_H2O_adsorbed", "tags": ["clay", "mineral", "geological"],
+     "notes": "Sepiolite zeolitic/adsorbed water 1450nm; broader than gypsum doublet"},
+
+    # Talc Mg3Si4O10(OH)2
+    {"center": 2315, "range": (2298, 2333), "species": "talc_Mg-OH",
+     "mechanism": "Mg-OH_combination", "tags": ["mineral", "geological", "phyllosilicate"],
+     "notes": "Talc Mg-OH 2315nm; 2315+2390nm doublet unique to talc; ultramafic talc-carbonate zones; Clark et al. 1990"},
+    {"center": 2390, "range": (2375, 2407), "species": "talc_Mg-OH",
+     "mechanism": "Mg-OH_combination_2nd", "tags": ["mineral", "geological", "phyllosilicate"],
+     "notes": "Second talc band 2390nm; doublet 2315+2390nm is diagnostic of talc"},
+    {"center": 1390, "range": (1373, 1407), "species": "talc_OH",
+     "mechanism": "Mg-OH_overtone", "tags": ["mineral", "geological", "phyllosilicate"],
+     "notes": "Talc Mg-OH overtone 1390nm; bonus confirmatory band"},
+
+    # ── SULPHATE MINERAL EXPANSION ────────────────────────────────────────
+
+    # Epsomite MgSO4·7H2O
+    {"center": 1450, "range": (1432, 1473), "species": "epsomite_H2O",
+     "mechanism": "H2O_overtone_structural", "tags": ["sulphate", "mineral", "geological", "evaporite"],
+     "notes": "Epsomite MgSO4·7H2O structural water 1450nm; broader than gypsum; Mg-SO4 band required; Cloutis et al. 2006"},
+    {"center": 1940, "range": (1918, 1963), "species": "epsomite_H2O",
+     "mechanism": "H2O_combination_structural", "tags": ["sulphate", "mineral", "geological"],
+     "notes": "Second epsomite water band 1940nm; paired with 1450nm"},
+    {"center": 2200, "range": (2180, 2222), "species": "epsomite_MgSO4",
+     "mechanism": "SO4_combination_Mg", "tags": ["sulphate", "mineral", "geological"],
+     "notes": "Epsomite Mg-SO4 combination ~2200nm; water bands distinguish from Al-OH clays"},
+
+    # Bassanite / anhydrite CaSO4·½H2O
+    {"center": 2165, "range": (2148, 2183), "species": "bassanite_SO4",
+     "mechanism": "SO4_combination_Ca", "tags": ["sulphate", "mineral", "geological", "evaporite"],
+     "notes": "Bassanite/anhydrite 2165nm; absent strong H2O bands distinguishes from gypsum; Bishop & Murad 2004"},
+
+    # Kieserite MgSO4·H2O
+    {"center": 1640, "range": (1624, 1658), "species": "kieserite_H2O",
+     "mechanism": "H2O_combination_monohydrate", "tags": ["sulphate", "mineral", "geological"],
+     "notes": "Kieserite monohydrate 1640nm; distinct from epsomite heptahydrate 1450nm; Cloutis et al. 2006"},
+    {"center": 2220, "range": (2205, 2238), "species": "kieserite_MgSO4",
+     "mechanism": "SO4_combination_Mg", "tags": ["sulphate", "mineral", "geological"],
+     "notes": "Kieserite Mg-SO4 2220nm; paired with 1640nm H2O confirms kieserite"},
+
+    # Szomolnokite FeSO4·H2O
+    {"center": 1000, "range": (978, 1025), "species": "szomolnokite_Fe2+",
+     "mechanism": "crystal_field_Fe2+_SO4", "tags": ["sulphate", "mineral", "geological", "mine_drainage"],
+     "notes": "Szomolnokite FeSO4·H2O Fe2+ ~1000nm; AMD iron sulfate mineral; Cloutis et al. 2006"},
+    {"center": 1490, "range": (1472, 1512), "species": "szomolnokite_H2O",
+     "mechanism": "H2O_combination_FeSO4", "tags": ["sulphate", "mineral", "geological"],
+     "notes": "Szomolnokite structural H2O 1490nm; paired with Fe2+ 1000nm confirms szomolnokite"},
+
+    # ── ADDITIONAL GEOLOGICAL MINERALS ───────────────────────────────────
+
+    # Prehnite Ca2Al2Si3O10(OH)2
+    {"center": 2243, "range": (2230, 2258), "species": "prehnite_Al-OH",
+     "mechanism": "Al-OH_Ca-OH_combination", "tags": ["mineral", "geological", "altered", "metamorphic"],
+     "notes": "Prehnite 2243nm; diagnostic vs epidote 2250nm and chlorite 2250nm; low-grade metamorphic; Kruse et al. 2012 RSE"},
+    {"center": 1490, "range": (1477, 1508), "species": "prehnite_OH",
+     "mechanism": "OH_combination", "tags": ["mineral", "geological"],
+     "notes": "Prehnite structural OH 1490nm; paired with 2243nm confirms prehnite"},
+
+    # Tourmaline / schorl (boron silicate)
+    {"center": 2120, "range": (2103, 2140), "species": "schorl_B-OH",
+     "mechanism": "B-OH_combination_tourmaline", "tags": ["mineral", "geological", "tourmaline"],
+     "notes": "Schorl/tourmaline B-OH combination 2120nm; unique to boron silicates; metasediment/greisen indicator"},
+
+    # Crocidolite / riebeckite (blue asbestos)
+    {"center": 2320, "range": (2302, 2342), "species": "crocidolite_Fe-OH",
+     "mechanism": "Fe-OH_combination_amphibole", "tags": ["mineral", "geological", "hazard", "asbestos", "amphibole"],
+     "notes": "Crocidolite riebeckite Fe-OH 2320nm; HAZARD blue asbestos; distinct from chrysotile by Fe3+ VIS band"},
+    {"center": 440,  "range": (420, 463), "species": "crocidolite_Fe3+",
+     "mechanism": "crystal_field_Fe3+_Na-amphibole", "tags": ["mineral", "geological", "hazard", "asbestos"],
+     "notes": "Crocidolite Fe3+ in Na-amphibole 440nm; broad; paired with Fe-OH 2320nm confirms crocidolite"},
+
+    # Ankerite Ca(Mg,Fe)(CO3)2
+    {"center": 2320, "range": (2303, 2339), "species": "ankerite_Mg-OH",
+     "mechanism": "Mg-OH_combination_carbonate", "tags": ["mineral", "geological", "carbonate"],
+     "notes": "Ankerite Mg-OH 2320nm; intermediate between dolomite 2310nm and calcite; ore alteration halo; Clark et al. 1990"},
+    {"center": 2335, "range": (2318, 2352), "species": "ankerite_CO3",
+     "mechanism": "CO3_combination_ankerite", "tags": ["mineral", "geological", "carbonate"],
+     "notes": "Ankerite CO3 combination 2335nm; doublet 2320+2335nm diagnostic of ankerite"},
+
+    # ── PLASTIC POLYMER EXPANSION ─────────────────────────────────────────
+
+    # PET (polyethylene terephthalate)
+    {"center": 1730, "range": (1713, 1750), "species": "PET_CH",
+     "mechanism": "CH_1st_overtone_aromatic+aliphatic", "tags": ["synthetic", "plastic", "polymer"],
+     "notes": "PET 1730nm; aromatic+aliphatic CH; slightly redshifted vs PE 1720nm; Garaba & Dierssen 2018 Sci. Rep."},
+    {"center": 2170, "range": (2155, 2188), "species": "PET_aromatic",
+     "mechanism": "aromatic_CH_combination", "tags": ["synthetic", "plastic", "polymer"],
+     "notes": "PET aromatic CH combination 2170nm; paired with 1730nm confirms PET over PE/PP"},
+
+    # PVC (polyvinyl chloride)
+    {"center": 1730, "range": (1712, 1750), "species": "PVC_CH2",
+     "mechanism": "CH2_1st_overtone_PVC", "tags": ["synthetic", "plastic", "polymer"],
+     "notes": "PVC CH2 overtone 1730nm; distinguish from PET by unique C-Cl band at 2030nm; Garaba & Dierssen 2018"},
+    {"center": 2030, "range": (2010, 2058), "species": "PVC_CCl",
+     "mechanism": "C-Cl_combination", "tags": ["synthetic", "plastic", "polymer"],
+     "notes": "PVC C-Cl combination 2030nm; unique to chlorinated plastic; most diagnostic PVC feature"},
+
+    # Polystyrene
+    {"center": 1680, "range": (1667, 1695), "species": "polystyrene_CH_aromatic",
+     "mechanism": "aromatic_CH_1st_overtone", "tags": ["synthetic", "plastic", "polymer"],
+     "notes": "Polystyrene aromatic C-H first overtone 1680nm; narrower than protein_amide II; Li et al. 2022 RS"},
+    {"center": 2240, "range": (2227, 2255), "species": "polystyrene_aromatic",
+     "mechanism": "aromatic_ring_combination", "tags": ["synthetic", "plastic", "polymer"],
+     "notes": "Polystyrene aromatic ring combination 2240nm; diagnostic narrow band; paired with 1680nm"},
+
+    # Rubber / polyisoprene
+    {"center": 1640, "range": (1622, 1658), "species": "rubber_C=C",
+     "mechanism": "C=C_combination_isoprene", "tags": ["synthetic", "organic", "rubber"],
+     "notes": "Polyisoprene C=C combination 1640nm; distinguishes rubber from saturated hydrocarbons"},
+    {"center": 1720, "range": (1703, 1740), "species": "rubber_CH",
+     "mechanism": "CH2_1st_overtone_rubber", "tags": ["synthetic", "organic", "rubber"],
+     "notes": "Rubber CH2 overtone 1720nm; paired with C=C 1640nm confirms natural/synthetic rubber"},
+
+    # ── URBAN MATERIALS ───────────────────────────────────────────────────
+
+    # Concrete / hardened cement (portlandite Ca(OH)2)
+    {"center": 1460, "range": (1443, 1479), "species": "portlandite_CaOH",
+     "mechanism": "Ca-OH_overtone", "tags": ["urban", "mineral", "concrete"],
+     "notes": "Portlandite Ca(OH)2 in hardened cement; 1460nm Ca-OH; paired with CO3 carbonation band; Herold et al. 2004"},
+
+    # ── SOIL NUTRIENTS ────────────────────────────────────────────────────
+
+    # Nitrate NO3-
+    {"center": 2050, "range": (2030, 2075), "species": "nitrate_NO3",
+     "mechanism": "NO3_combination_overtone", "tags": ["soil", "agricultural", "geochemical"],
+     "notes": "Soil nitrate NO3- combination 2050nm; precision agriculture / geochemical survey; Malley et al. 1999 SSSAJ"},
+    {"center": 1410, "range": (1397, 1425), "species": "nitrate_NO3",
+     "mechanism": "NO3_combination", "tags": ["soil", "agricultural"],
+     "notes": "Second nitrate band 1410nm; weaker; overlaps Al-OH_clay — paired 2050nm band required"},
+
+    # Ammonium NH4+ second band (extends primary NH4+ at 2160nm)
+    {"center": 1560, "range": (1546, 1577), "species": "NH4+_2nd",
+     "mechanism": "NH4_combination_2nd", "tags": ["mineral", "soil", "altered"],
+     "notes": "Second ammonium band 1560nm; paired with NH4+ 2160nm confirms ammonium-illite/buddingtonite; Krohn & Altaner 1987"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -749,6 +1032,144 @@ COMPOSITE_RULES: list[dict] = [
     {"name": "starch_food_grain",      "category": "biologic",
      "required_species": ["starch", "cellulose_OH"],
      "base_score": 0.79, "notes": "Starch 2100 + cellulose 1480: grain / food"},
+
+    # ── STRESS PIGMENTS & AQUATIC ────────────────────────────────────────
+    {"name": "anthocyanin_stress",       "category": "biologic",
+     "required_species": ["anthocyanins", "chlorophyll_a+b"],
+     "bonus_species": ["carotenoids", "zeaxanthin_PRI"], "base_score": 0.75,
+     "notes": "Anthocyanins + Chl: stress-protection pigmentation (UV/drought/cold/pathogen response)"},
+    {"name": "phycoerythrin_algae",      "category": "biologic",
+     "required_species": ["phycoerythrin", "phycoerythrin"],
+     "bonus_species": ["chlorophyll_a"], "base_score": 0.88,
+     "notes": "Phycoerythrin doublet 495+545nm: red algae or PE-type cyanobacteria in water"},
+    {"name": "cyanobacteria_bloom",      "category": "biologic",
+     "required_species": ["phycocyanin", "allophycocyanin", "chlorophyll_a+b"],
+     "bonus_species": ["liquid_water_OH"], "base_score": 0.87,
+     "notes": "Phycocyanin + allophycocyanin + Chl: cyanobacteria bloom (HAB indicator)"},
+    {"name": "diatom_bloom",             "category": "biologic",
+     "required_species": ["fucoxanthin", "chlorophyll_a"],
+     "bonus_species": ["liquid_water_OH"], "base_score": 0.82,
+     "notes": "Fucoxanthin + Chl-a: diatom-dominated phytoplankton bloom (spring bloom signal)"},
+
+    # ── IRON MINERALOGY ──────────────────────────────────────────────────
+    {"name": "ferrihydrite",             "category": "mineral",
+     "required_species": ["ferrihydrite", "ferrihydrite"],
+     "bonus_species": ["jarosite"], "base_score": 0.83,
+     "notes": "Ferrihydrite 430+750nm pair; short-range-order Fe3+ oxyhydroxide; AMD and mine-waste indicator"},
+    {"name": "lepidocrocite_soil",       "category": "mineral",
+     "required_species": ["lepidocrocite", "lepidocrocite"],
+     "base_score": 0.80,
+     "notes": "Lepidocrocite γ-FeOOH 475+1000nm pair; waterlogged gleyed soils; redox-oscillation indicator"},
+    {"name": "acid_mine_drainage",       "category": "geological",
+     "required_species": ["ferrihydrite", "jarosite"],
+     "bonus_species": ["szomolnokite_Fe2+", "Fe3+_goethite"], "base_score": 0.85,
+     "notes": "AMD assemblage: ferrihydrite+jarosite±szomolnokite; low-pH Fe-oxidation drainage signature"},
+    {"name": "siderite",                 "category": "mineral",
+     "required_species": ["siderite_Fe2+", "siderite_CO3"],
+     "base_score": 0.81,
+     "notes": "Siderite FeCO3: broad Fe2+ ~1080nm + CO3 ~2340nm; anoxic/reducing sedimentary facies"},
+
+    # ── REE EXPANSION ────────────────────────────────────────────────────
+    {"name": "REE_erbium",               "category": "mineral",
+     "required_species": ["Er3+", "Er3+"],
+     "bonus_species": ["Sm3+_or_Er3+"], "base_score": 0.88,
+     "notes": "Er3+ 4f multiplet ≥2 of {650, 975, 1530nm}; 1530nm telecom band is highly diagnostic"},
+    {"name": "REE_dysprosium",           "category": "mineral",
+     "required_species": ["Dy3+", "Dy3+"],
+     "base_score": 0.87,
+     "notes": "Dy3+ doublet 910+1260nm; HREE; carbonatite/granitic REE deposit indicator"},
+    {"name": "REE_ytterbium",            "category": "mineral",
+     "required_species": ["Yb3+"],
+     "base_score": 0.72,
+     "notes": "Yb3+ 975nm single narrow line; requires FWHM <15nm to distinguish from H2O atmospheric"},
+    {"name": "REE_holmium",              "category": "mineral",
+     "required_species": ["Ho3+", "Ho3+"],
+     "base_score": 0.85,
+     "notes": "Ho3+ doublet 450+537nm; paired narrow 4f features diagnostic of holmium"},
+
+    # ── CLAY / PHYLLOSILICATE ────────────────────────────────────────────
+    {"name": "pyrophyllite",             "category": "mineral",
+     "required_species": ["Al-OH_pyrophyllite", "Al-OH_pyrophyllite"],
+     "required_absent": ["Al-OH_clay"],
+     "base_score": 0.86,
+     "notes": "Pyrophyllite 2165+1390nm doublet; absent kaolinite 1410nm; epithermal acid-sulfate alteration mapping"},
+    {"name": "gibbsite_laterite",        "category": "mineral",
+     "required_species": ["gibbsite", "gibbsite"],
+     "base_score": 0.85,
+     "notes": "Gibbsite Al(OH)3 doublet 2263+2387nm; tropical laterite and deep weathering profile"},
+    {"name": "boehmite_bauxite",         "category": "mineral",
+     "required_species": ["boehmite", "boehmite"],
+     "bonus_species": ["gibbsite"], "base_score": 0.83,
+     "notes": "Boehmite AlOOH doublet 2175+2110nm; bauxite deposits; high-temperature laterite horizon"},
+    {"name": "halloysite",               "category": "mineral",
+     "required_species": ["halloysite", "liquid_water_OH"],
+     "bonus_species": ["OH_water"], "base_score": 0.76,
+     "notes": "Halloysite hydrated kaolinite: Al-OH 2205nm + interlayer water signature"},
+    {"name": "talc",                     "category": "mineral",
+     "required_species": ["talc_Mg-OH", "talc_Mg-OH"],
+     "bonus_species": ["talc_OH"], "base_score": 0.86,
+     "notes": "Talc Mg3Si4O10(OH)2: doublet 2315+2390nm diagnostic; ultramafic talc-carbonate alteration zones"},
+
+    # ── SULPHATE MINERALS ────────────────────────────────────────────────
+    {"name": "epsomite",                 "category": "mineral",
+     "required_species": ["epsomite_H2O", "epsomite_MgSO4"],
+     "base_score": 0.84,
+     "notes": "Epsomite MgSO4·7H2O: water 1450+1940nm + Mg-SO4 2200nm; saline playa evaporite"},
+    {"name": "kieserite",                "category": "mineral",
+     "required_species": ["kieserite_H2O", "kieserite_MgSO4"],
+     "base_score": 0.83,
+     "notes": "Kieserite MgSO4·H2O: 1640nm monohydrate + 2220nm SO4; distinct from epsomite heptahydrate"},
+    {"name": "szomolnokite",             "category": "mineral",
+     "required_species": ["szomolnokite_Fe2+", "szomolnokite_H2O"],
+     "base_score": 0.80,
+     "notes": "Szomolnokite FeSO4·H2O: Fe2+ 1000nm + H2O 1490nm; AMD iron-sulfate mineral assemblage"},
+
+    # ── GEOLOGICAL MINERALS ──────────────────────────────────────────────
+    {"name": "prehnite",                 "category": "mineral",
+     "required_species": ["prehnite_Al-OH", "prehnite_OH"],
+     "base_score": 0.81,
+     "notes": "Prehnite Ca2Al2Si3O10(OH)2: 2243+1490nm; low-grade metamorphic / prehnite-pumpellyite facies"},
+    {"name": "schorl_tourmaline",        "category": "mineral",
+     "required_species": ["schorl_B-OH", "Fe3+_charge_transfer"],
+     "base_score": 0.78,
+     "notes": "Schorl tourmaline: B-OH 2120nm + Fe3+ CT; metasediment, boron-rich greisen alteration"},
+    {"name": "crocidolite_asbestos",     "category": "mineral",
+     "required_species": ["crocidolite_Fe-OH", "crocidolite_Fe3+"],
+     "base_score": 0.86,
+     "notes": "HAZARD: crocidolite (blue asbestos) Fe-OH 2320nm + Fe3+ 440nm; Fe3+ VIS band absent in chrysotile"},
+    {"name": "ankerite",                 "category": "mineral",
+     "required_species": ["ankerite_Mg-OH", "ankerite_CO3"],
+     "base_score": 0.80,
+     "notes": "Ankerite Ca(Mg,Fe)(CO3)2: doublet 2320+2335nm; carbonate alteration halo in gold deposits"},
+
+    # ── PLASTICS EXPANSION ───────────────────────────────────────────────
+    {"name": "PET_plastic",              "category": "synthetic",
+     "required_species": ["PET_CH", "PET_aromatic"],
+     "base_score": 0.85,
+     "notes": "PET polyester: 1730nm CH + 2170nm aromatic combination; bottles, textiles, litter mapping"},
+    {"name": "PVC_plastic",              "category": "synthetic",
+     "required_species": ["PVC_CH2", "PVC_CCl"],
+     "base_score": 0.87,
+     "notes": "PVC: 1730nm CH2 + 2030nm C-Cl combination; diagnostic C-Cl unique among common plastics"},
+    {"name": "polystyrene",              "category": "synthetic",
+     "required_species": ["polystyrene_CH_aromatic", "polystyrene_aromatic"],
+     "base_score": 0.84,
+     "notes": "Polystyrene: 1680nm aromatic CH + 2240nm ring combination; packaging, foam, litter mapping"},
+    {"name": "rubber_polyisoprene",      "category": "synthetic",
+     "required_species": ["rubber_C=C", "rubber_CH"],
+     "base_score": 0.79,
+     "notes": "Natural/synthetic rubber polyisoprene: C=C 1640nm + CH2 1720nm; tire debris mapping"},
+
+    # ── URBAN MATERIALS ──────────────────────────────────────────────────
+    {"name": "concrete_urban",           "category": "urban",
+     "required_species": ["portlandite_CaOH", "carbonate_CO3"],
+     "bonus_species": ["OH_water"], "base_score": 0.78,
+     "notes": "Concrete/cement: portlandite Ca-OH 1460nm + carbonation CO3 ~2340nm; urban surface mapping"},
+    {"name": "asphalt_bitumen",          "category": "urban",
+     "required_species": ["CH2_lipid", "CH2_CH3_hydrocarbon", "coal_aromatic"],
+     "required_absent": ["red_edge_inflection", "Al-OH"],
+     "bonus_species": ["coal_CH2"], "base_score": 0.83,
+     "notes": "Asphalt bitumen: CH2 1720nm + CH 2310nm + aromatic 670nm; absent vegetation/clay confirms road surface"},
 ]
 
 # Build ordered class labels (0 = unknown, 1..N = composite rules)

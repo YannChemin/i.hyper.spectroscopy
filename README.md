@@ -3,6 +3,8 @@
 **GRASS GIS module — Per-pixel spectral feature interpretation of hyperspectral
 imagery (400–2500 nm VNIR+SWIR)**
 
+> **Database:** 163 absorption features · 58 composite material classes · 51 automated tests
+
 Part of the [i.hyper](../README.md) module family for hyperspectral data
 processing in GRASS GIS.
 
@@ -20,9 +22,9 @@ in three layers:
 1. **Feature layer** — identify absorption features from local band depths
    (1 − R_band / R_continuum), with a ±150 nm sliding continuum window
 2. **Chromophore layer** — match each feature to candidate absorbing species
-   (chlorophyll, Fe³⁺, Al-OH, CO₃²⁻, CH overtones, …) from a 70+ entry
+   (chlorophyll, Fe³⁺, Al-OH, CO₃²⁻, CH overtones, …) from a **163-entry**
    physics database spanning 400–2500 nm
-3. **Evidence layer** — score 28 composite material hypotheses by how many
+3. **Evidence layer** — score **58 composite material hypotheses** by how many
    independent species co-occur (e.g., chlorophyll + red-edge → green vegetation;
    Al-OH + CO₃²⁻ → calcite/dolomite)
 
@@ -30,7 +32,7 @@ Two outputs are produced per pixel:
 
 | Output | Type | Content |
 |--------|------|---------|
-| `output` | integer CELL | Dominant class code (0 = unknown, 1–28 = named class) |
+| `output` | integer CELL | Dominant class code (0 = unknown, 1–58 = named class) |
 | `confidence` | float FCELL | Best-hypothesis score 0–1 |
 
 ---
@@ -68,30 +70,70 @@ Two outputs are produced per pixel:
 | 26 | propylitic\_alteration | geological |
 | 27 | chrysotile\_asbestos | mineral |
 | 28 | starch\_food\_grain | biologic |
+| 29 | anthocyanin\_stress | biologic |
+| 30 | phycoerythrin\_algae | biologic |
+| 31 | cyanobacteria\_bloom | biologic |
+| 32 | diatom\_bloom | biologic |
+| 33 | ferrihydrite | mineral |
+| 34 | lepidocrocite\_soil | mineral |
+| 35 | acid\_mine\_drainage | geological |
+| 36 | siderite | mineral |
+| 37 | REE\_erbium | mineral |
+| 38 | REE\_dysprosium | mineral |
+| 39 | REE\_ytterbium | mineral |
+| 40 | REE\_holmium | mineral |
+| 41 | pyrophyllite | mineral |
+| 42 | gibbsite\_laterite | mineral |
+| 43 | boehmite\_bauxite | mineral |
+| 44 | halloysite | mineral |
+| 45 | talc | mineral |
+| 46 | epsomite | mineral |
+| 47 | kieserite | mineral |
+| 48 | szomolnokite | mineral |
+| 49 | prehnite | mineral |
+| 50 | schorl\_tourmaline | mineral |
+| 51 | crocidolite\_asbestos | mineral |
+| 52 | ankerite | mineral |
+| 53 | PET\_plastic | synthetic |
+| 54 | PVC\_plastic | synthetic |
+| 55 | polystyrene | synthetic |
+| 56 | rubber\_polyisoprene | synthetic |
+| 57 | concrete\_urban | urban |
+| 58 | asphalt\_bitumen | urban |
 
 ---
 
 ## Absorption feature database
 
-The built-in database covers 70+ entries grouped by physical mechanism:
+The built-in database covers **163 entries** grouped by physical mechanism:
 
 | Group | Species | Key wavelengths (nm) |
 |-------|---------|----------------------|
 | Vegetation pigments | Chlorophyll a+b, carotenoids, phycocyanin | 430, 480, 620, 665, 710 |
+| Stress pigments | Anthocyanins, zeaxanthin/PRI | 531, 540 |
+| Aquatic pigments | Phycoerythrin, allophycocyanin, fucoxanthin | 490, 495, 545, 650 |
 | Hemoglobin | HbO₂ (Soret, Q-bands), Hb, MetHb | 415, 542, 560, 577, 630 |
-| Iron oxides | Fe³⁺ hematite/goethite, Fe²⁺ pyroxene/olivine | 490, 530, 700, 900, 1000, 2000 |
-| Rare earth elements | Nd³⁺ (×4 lines), Sm³⁺/Er³⁺, Pr³⁺ | 525, 580, 745, 800, 867, 940 |
+| Iron oxides (common) | Fe³⁺ hematite/goethite, Fe²⁺ pyroxene/olivine | 490, 530, 700, 900, 1000, 2000 |
+| Iron oxides (expanded) | Ferrihydrite, lepidocrocite, siderite FeCO₃ | 430, 475, 750, 1000, 1080, 2340 |
+| Rare earth elements | Nd³⁺ (×4), Sm³⁺/Er³⁺, Pr³⁺ | 525, 580, 745, 800, 867, 940 |
+| REE expanded | Dy³⁺, Yb³⁺, Er³⁺ (×3), Ho³⁺, Eu³⁺, Tb³⁺, Ce³⁺ | 400, 450, 490, 535, 537, 650, 910, 975, 1260, 1530 |
 | Other metals | Cu²⁺, Cr³⁺, Co²⁺, Mn²⁺ | 435, 460, 550, 630, 700 |
 | Water / ice | Liquid H₂O, structural OH, ice | 970, 1200, 1380, 1450, 1940, 2000 |
-| Clay minerals | Al-OH, Mg-OH, NH₄⁺ | 1410, 2160, 2200, 2250, 2310 |
-| Carbonates | CO₃²⁻ (calcite, dolomite) | 2120, 2330, 2350, 2500 |
-| Sulphates | Gypsum, alunite, jarosite | 1450, 1490, 1750, 2210, 2265 |
+| Clay minerals (common) | Al-OH, Mg-OH, NH₄⁺ | 1410, 2160, 2200, 2250, 2310 |
+| Clay minerals (expanded) | Pyrophyllite, gibbsite, boehmite, halloysite, phengite, palygorskite, sepiolite, talc | 1390, 2110, 2165, 2175, 2205, 2215, 2263, 2315, 2387, 2390 |
+| Carbonates | CO₃²⁻ calcite/dolomite/ankerite/siderite | 2120, 2320, 2330, 2335, 2350, 2500 |
+| Sulphates (common) | Gypsum, alunite, jarosite | 1450, 1490, 1750, 2210, 2265 |
+| Sulphates (expanded) | Epsomite, bassanite, kieserite, szomolnokite | 1000, 1490, 1640, 1940, 2165, 2200, 2220 |
 | Organics | Cellulose, lignin, lipid, protein, starch | 1210, 1480, 1680, 1720, 2054, 2100 |
 | Petroleum / coal | CH overtones, aromatic CH | 1210, 1720, 2300, 2310 |
-| Polymers | Polyethylene, polypropylene, PET, nylon | 1150, 1215, 1660, 2310 |
-| Silicates / feldspars | Si-OH, Fe²⁺ in anorthite | 1250, 1380, 2200 |
+| Polymers (common) | Polyethylene, polypropylene, nylon | 1150, 1215, 1660, 2310 |
+| Polymers (expanded) | PET, PVC, polystyrene, rubber | 1640, 1680, 1720, 1730, 2030, 2170, 2240 |
+| Silicates / feldspars | Si-OH, Fe²⁺ feldspar | 1250, 1380, 2200 |
 | Sheet silicates | Mica, amphibole, serpentine, chlorite, epidote | 2230, 2250, 2310, 2340, 2370 |
+| Geological minerals | Prehnite, schorl/tourmaline, crocidolite | 440, 1490, 2120, 2243, 2320 |
+| Urban materials | Portlandite (concrete) | 1460 |
 | Atmospheric refs | O₂ A/B bands, H₂O vapour columns | 690, 760, 820, 940, 1140 |
+| Soil nutrients | Nitrate NO₃⁻, ammonium NH₄⁺ (2nd band) | 1410, 1560, 2050 |
 
 ---
 
@@ -201,7 +243,7 @@ The pure-Python interpretation engine (no GRASS session required) is covered by
 python -m pytest test_suite.py -v
 ```
 
-41 tests across 8 classes:
+51 tests across 9 classes:
 
 | Class | What is tested |
 |-------|---------------|
@@ -213,6 +255,7 @@ python -m pytest test_suite.py -v
 | `TestBuildBandSpeciesIndex` | Known species at correct band indices, out-of-range wavelengths → empty, deduplication/sort |
 | `TestScoreCompositesNumpy` | Shape, vegetation pixel ≥ 0.60 / flat pixel = 0, all scores in [0,1], `required_absent` exclusion |
 | `TestChromophoreScoring` | Deeper feature → higher confidence; multi-band Nd³⁺ → higher confidence than single band |
+| `TestNewMaterialClasses` | Pyrophyllite vs kaolinite disambiguation; ferrihydrite doublet; PVC/PET plastic; gibbsite doublet; crocidolite vs chrysotile; acid mine drainage; talc doublet; phycoerythrin doublet; DB integrity for all 30 new rules |
 
 The test file mocks `grass.script` and loads `i.hyper.spectroscopy.py` via
 `importlib`, so no GRASS installation is needed.

@@ -15,9 +15,9 @@ interpretation of hyperspectral imagery imported as 3D raster maps
 
 <p>The module reads wavelength metadata from hyperspectral 3D raster bands,
 computes local band depths across the VNIR-SWIR range (400–2500 nm), matches
-detected absorption features to a physics-based database of 70+ absorbing
-species, and scores 28 composite material hypotheses per pixel.  Two output
-rasters are produced: a dominant-class integer map and a confidence map.</p>
+detected absorption features to a physics-based database of <b>163 absorbing
+species entries</b>, and scores <b>58 composite material hypotheses</b> per pixel.
+Two output rasters are produced: a dominant-class integer map and a confidence map.</p>
 
 <p><em>i.hyper.spectroscopy</em> is part of the <b>i.hyper</b> module family.</p>
 
@@ -75,27 +75,69 @@ where all composite scores fall below 0.10 receive class 0 (unknown).</p>
   <tr><td>26</td><td>propylitic_alteration</td><td>geological</td></tr>
   <tr><td>27</td><td>chrysotile_asbestos</td><td>mineral</td></tr>
   <tr><td>28</td><td>starch_food_grain</td><td>biologic</td></tr>
+  <tr><td>29</td><td>anthocyanin_stress</td><td>biologic</td></tr>
+  <tr><td>30</td><td>phycoerythrin_algae</td><td>biologic</td></tr>
+  <tr><td>31</td><td>cyanobacteria_bloom</td><td>biologic</td></tr>
+  <tr><td>32</td><td>diatom_bloom</td><td>biologic</td></tr>
+  <tr><td>33</td><td>ferrihydrite</td><td>mineral</td></tr>
+  <tr><td>34</td><td>lepidocrocite_soil</td><td>mineral</td></tr>
+  <tr><td>35</td><td>acid_mine_drainage</td><td>geological</td></tr>
+  <tr><td>36</td><td>siderite</td><td>mineral</td></tr>
+  <tr><td>37</td><td>REE_erbium</td><td>mineral</td></tr>
+  <tr><td>38</td><td>REE_dysprosium</td><td>mineral</td></tr>
+  <tr><td>39</td><td>REE_ytterbium</td><td>mineral</td></tr>
+  <tr><td>40</td><td>REE_holmium</td><td>mineral</td></tr>
+  <tr><td>41</td><td>pyrophyllite</td><td>mineral</td></tr>
+  <tr><td>42</td><td>gibbsite_laterite</td><td>mineral</td></tr>
+  <tr><td>43</td><td>boehmite_bauxite</td><td>mineral</td></tr>
+  <tr><td>44</td><td>halloysite</td><td>mineral</td></tr>
+  <tr><td>45</td><td>talc</td><td>mineral</td></tr>
+  <tr><td>46</td><td>epsomite</td><td>mineral</td></tr>
+  <tr><td>47</td><td>kieserite</td><td>mineral</td></tr>
+  <tr><td>48</td><td>szomolnokite</td><td>mineral</td></tr>
+  <tr><td>49</td><td>prehnite</td><td>mineral</td></tr>
+  <tr><td>50</td><td>schorl_tourmaline</td><td>mineral</td></tr>
+  <tr><td>51</td><td>crocidolite_asbestos</td><td>mineral</td></tr>
+  <tr><td>52</td><td>ankerite</td><td>mineral</td></tr>
+  <tr><td>53</td><td>PET_plastic</td><td>synthetic</td></tr>
+  <tr><td>54</td><td>PVC_plastic</td><td>synthetic</td></tr>
+  <tr><td>55</td><td>polystyrene</td><td>synthetic</td></tr>
+  <tr><td>56</td><td>rubber_polyisoprene</td><td>synthetic</td></tr>
+  <tr><td>57</td><td>concrete_urban</td><td>urban</td></tr>
+  <tr><td>58</td><td>asphalt_bitumen</td><td>urban</td></tr>
 </table>
 
 <h3>Absorption feature database</h3>
 
+<p>163 entries across the full VNIR-SWIR range:</p>
+
 <table border="1" cellpadding="4" cellspacing="0">
   <tr><th>Group</th><th>Key species</th><th>Diagnostic wavelengths (nm)</th></tr>
   <tr><td>Vegetation pigments</td><td>Chlorophyll a+b, carotenoids, phycocyanin</td><td>430, 480, 620, 665, 710</td></tr>
+  <tr><td>Stress pigments</td><td>Anthocyanins, zeaxanthin/PRI</td><td>531, 540</td></tr>
+  <tr><td>Aquatic pigments</td><td>Phycoerythrin, allophycocyanin, fucoxanthin</td><td>490, 495, 545, 650</td></tr>
   <tr><td>Hemoglobin</td><td>HbO<sub>2</sub> Soret + Q-bands, Hb, MetHb</td><td>415, 542, 560, 577, 630</td></tr>
-  <tr><td>Iron oxides</td><td>Fe<sup>3+</sup> hematite/goethite, Fe<sup>2+</sup> pyroxene/olivine</td><td>490, 530, 700, 900, 1000, 2000</td></tr>
+  <tr><td>Iron oxides (common)</td><td>Fe<sup>3+</sup> hematite/goethite, Fe<sup>2+</sup> pyroxene/olivine</td><td>490, 530, 700, 900, 1000, 2000</td></tr>
+  <tr><td>Iron oxides (expanded)</td><td>Ferrihydrite, lepidocrocite, siderite FeCO<sub>3</sub></td><td>430, 475, 750, 1000, 1080, 2340</td></tr>
   <tr><td>Rare earths</td><td>Nd<sup>3+</sup> (4 lines), Sm<sup>3+</sup>/Er<sup>3+</sup>, Pr<sup>3+</sup></td><td>525, 580, 745, 800, 867, 940</td></tr>
+  <tr><td>REE expanded</td><td>Dy<sup>3+</sup>, Yb<sup>3+</sup>, Er<sup>3+</sup> (3 lines), Ho<sup>3+</sup>, Eu<sup>3+</sup>, Tb<sup>3+</sup>, Ce<sup>3+</sup></td><td>400, 450, 490, 535, 537, 650, 910, 975, 1260, 1530</td></tr>
   <tr><td>Other metals</td><td>Cu<sup>2+</sup>, Cr<sup>3+</sup>, Co<sup>2+</sup>, Mn<sup>2+</sup></td><td>435, 460, 550, 630, 700</td></tr>
   <tr><td>Water / ice</td><td>Liquid H<sub>2</sub>O, structural OH, ice</td><td>970, 1200, 1380, 1450, 1940, 2000</td></tr>
-  <tr><td>Clay minerals</td><td>Al-OH, Mg-OH, NH<sub>4</sub><sup>+</sup></td><td>1410, 2160, 2200, 2250, 2310</td></tr>
-  <tr><td>Carbonates</td><td>CO<sub>3</sub><sup>2−</sup> (calcite, dolomite)</td><td>2120, 2330, 2350, 2500</td></tr>
-  <tr><td>Sulphates</td><td>Gypsum, alunite, jarosite</td><td>1450, 1490, 1750, 2210, 2265</td></tr>
+  <tr><td>Clay minerals (common)</td><td>Al-OH, Mg-OH, NH<sub>4</sub><sup>+</sup></td><td>1410, 2160, 2200, 2250, 2310</td></tr>
+  <tr><td>Clay minerals (expanded)</td><td>Pyrophyllite, gibbsite, boehmite, halloysite, phengite, palygorskite, sepiolite, talc</td><td>1390, 2110, 2165, 2175, 2205, 2215, 2263, 2315, 2387, 2390</td></tr>
+  <tr><td>Carbonates</td><td>CO<sub>3</sub><sup>2−</sup> calcite/dolomite/ankerite/siderite</td><td>2120, 2320, 2330, 2335, 2350, 2500</td></tr>
+  <tr><td>Sulphates (common)</td><td>Gypsum, alunite, jarosite</td><td>1450, 1490, 1750, 2210, 2265</td></tr>
+  <tr><td>Sulphates (expanded)</td><td>Epsomite, bassanite, kieserite, szomolnokite</td><td>1000, 1490, 1640, 2165, 2200, 2220</td></tr>
   <tr><td>Organics</td><td>Cellulose, lignin, lipid, protein, starch</td><td>1210, 1480, 1680, 1720, 2054, 2100</td></tr>
   <tr><td>Petroleum / coal</td><td>CH overtones, aromatic CH</td><td>1210, 1720, 2300, 2310</td></tr>
-  <tr><td>Polymers</td><td>Polyethylene, polypropylene, nylon</td><td>1150, 1215, 1660, 2310</td></tr>
+  <tr><td>Polymers (common)</td><td>Polyethylene, polypropylene, nylon</td><td>1150, 1215, 1660, 2310</td></tr>
+  <tr><td>Polymers (expanded)</td><td>PET, PVC, polystyrene, rubber</td><td>1640, 1680, 1720, 1730, 2030, 2170, 2240</td></tr>
   <tr><td>Silicates</td><td>Si-OH, Fe<sup>2+</sup> feldspar</td><td>1250, 1380, 2200</td></tr>
   <tr><td>Sheet silicates</td><td>Mica, amphibole, serpentine, chlorite, epidote</td><td>2230, 2250, 2310, 2340, 2370</td></tr>
+  <tr><td>Geological minerals</td><td>Prehnite, schorl/tourmaline, crocidolite</td><td>440, 1490, 2120, 2243, 2320</td></tr>
+  <tr><td>Urban materials</td><td>Portlandite Ca(OH)<sub>2</sub> (hardened cement)</td><td>1460</td></tr>
   <tr><td>Atmospheric refs</td><td>O<sub>2</sub> A/B bands, H<sub>2</sub>O vapour</td><td>690, 760, 820, 940, 1140</td></tr>
+  <tr><td>Soil nutrients</td><td>Nitrate NO<sub>3</sub><sup>−</sup>, ammonium NH<sub>4</sub><sup>+</sup> (2nd band)</td><td>1410, 1560, 2050</td></tr>
 </table>
 
 <h2>NOTES</h2>
