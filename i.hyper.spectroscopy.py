@@ -118,22 +118,27 @@ _G3D_LIB = None
 
 def _load_g3d_lib():
     """Load libgrass_g3d and set up Rast3d_extract_z_slice() signature."""
-    import subprocess as _sp
-    grass_config = _sp.check_output(['grass', '--config', 'path'],
-                                    text=True).strip()
-    lib_dir = os.path.join(grass_config, 'lib')
+    # Use GISBASE from the running GRASS session — avoids picking up a
+    # different GRASS installation via PATH.
+    lib_dir = os.path.join(os.environ['GISBASE'], 'lib')
 
-    # libgrass_gis must be loaded first so the shared G_* symbol table is
-    # populated; then call G__gisinit() (the real C function behind the
-    # G_gisinit macro) so Rast3d_* functions don't abort with
-    # "Programmer forgot to call G_gisinit()".
+    # libgrass_gis must be loaded first (RTLD_GLOBAL) so its symbols are
+    # visible to libgrass_g3d; then call G__no_gisinit() to satisfy the
+    # "not initialized" check without repeating the mapset permission check
+    # (GRASS already validated the mapset when the module was invoked).
+    # The version arg is GIS_H_VERSION = GRASS_HEADERS_VERSION from the
+    # installed version.h — not GRASS_VERSION_NUMBER, not `grass --config`.
+    import re as _re
+    _vh = os.path.join(os.environ['GISBASE'], 'include', 'grass', 'version.h')
+    with open(_vh) as _f:
+        _m = _re.search(r'#define\s+GRASS_HEADERS_VERSION\s+"([^"]+)"', _f.read())
+    headers_version = (_m.group(1).encode() if _m else b"")
+
     gis_lib = ctypes.CDLL(os.path.join(lib_dir, 'libgrass_gis.so'),
                           mode=ctypes.RTLD_GLOBAL)
-    grass_version = _sp.check_output(['grass', '--config', 'version'],
-                                     text=True).strip()
-    gis_lib.G__gisinit.restype = None
-    gis_lib.G__gisinit.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
-    gis_lib.G__gisinit(grass_version.encode(), b"i.hyper.spectroscopy")
+    gis_lib.G__no_gisinit.restype = None
+    gis_lib.G__no_gisinit.argtypes = [ctypes.c_char_p]
+    gis_lib.G__no_gisinit(headers_version)
 
     lib = ctypes.CDLL(os.path.join(lib_dir, 'libgrass_g3d.so'))
     lib.Rast3d_extract_z_slice.restype = ctypes.c_int
@@ -1389,7 +1394,10 @@ def _compute_depths_numpy(cube: np.ndarray, wavelengths: np.ndarray,
         mask = np.abs(wavelengths - wavelengths[i]) < margin
         mask[i] = False
         if mask.any():
-            local_max = np.nanmax(cube[mask], axis=0)
+            with np.errstate(all='ignore'):
+                local_max = np.nanmax(cube[mask], axis=0)
+            # All-NaN columns (masked/edge pixels): treat continuum as 1.0
+            local_max = np.where(np.isnan(local_max), 1.0, local_max)
         else:
             local_max = np.ones(cube.shape[1])
         local_max = np.maximum(local_max, 1e-10)
@@ -1584,6 +1592,11 @@ def main(options, flags):
     n_pixels = nrows * ncols
     Z = len(bands)
 
+    # Align the 3D computational region to the raster so that
+    # Rast3d_get_window() inside Rast3d_extract_z_slice() sees the correct
+    # depths (default region may have depths=1).
+    gs.run_command('g.region', raster3d=input_map)
+
     gs.message(f"Loading {Z} bands ({nrows}×{ncols} pixels) via fast Z-slice…")
     cube = np.full((Z, n_pixels), np.nan, dtype=np.float64)
 
@@ -1629,13 +1642,24 @@ def main(options, flags):
     conf_arr[nodata_mask] = np.nan
 
     # Write output rasters
+    reg = gs.region()
+    _ascii_header = (
+        f"north: {reg['n']}\n"
+        f"south: {reg['s']}\n"
+        f"east: {reg['e']}\n"
+        f"west: {reg['w']}\n"
+        f"rows: {nrows}\n"
+        f"cols: {ncols}\n"
+    )
+
     def _write_raster(name, array, rtype, null_val):
         ascii_tmp = gs.tempfile()
-        if rtype == 'int':
-            np.savetxt(ascii_tmp, array, fmt='%d', delimiter=' ')
-        else:
-            np.savetxt(ascii_tmp, array, fmt='%.4f', delimiter=' ',
-                       header='', comments='')
+        with open(ascii_tmp, 'w') as _fh:
+            _fh.write(_ascii_header)
+            if rtype == 'int':
+                np.savetxt(_fh, array, fmt='%d', delimiter=' ')
+            else:
+                np.savetxt(_fh, array, fmt='%.4f', delimiter=' ')
         gs.run_command('r.in.ascii', input=ascii_tmp, output=name,
                        null_value=str(null_val), overwrite=True, quiet=True)
         os.unlink(ascii_tmp)
