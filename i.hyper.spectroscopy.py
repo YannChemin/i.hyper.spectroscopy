@@ -84,6 +84,20 @@
 
 from __future__ import annotations
 
+# ── ras3d standalone detection ────────────────────────────────────────────────
+import os as _os
+_RAS3D = False
+if not _os.environ.get('GISBASE'):
+    try:
+        import importlib.util as _ilu
+        if _ilu.find_spec('ras3d') and _ilu.find_spec('ras3d_grass_shim'):
+            from ras3d_grass_shim import install as _r3_install
+            _r3_install()
+            _RAS3D = True
+    except Exception:
+        pass
+# ─────────────────────────────────────────────────────────────────────────────
+
 import sys
 import os
 import ctypes
@@ -160,6 +174,19 @@ def extract_band(raster3d: str, band_num: int) -> str:
 
     Returns the temporary 2D raster name (registered for cleanup at exit).
     """
+    if _RAS3D:
+        import ras3d as _r3
+        import ras3d_write as _r3w
+        from ras3d_grass_shim import get_band_cache as _gbc
+        _h = _r3.open_cube(raster3d)
+        _arr = _r3.get_band(_h, band_num - 1)
+        _r3.close_cube(_h)
+        tmp_name = f"tmp_spectroscopy_{raster3d.replace('@','_').replace('#','_').replace('.','_')}_{band_num}"
+        _r3w.write_raster2d(_r3w.outpath(tmp_name), _arr, None)
+        _gbc()[tmp_name] = _arr
+        _TMP_RASTERS.append(tmp_name)
+        return tmp_name
+
     global _G3D_LIB
     if _G3D_LIB is None:
         _G3D_LIB = _load_g3d_lib()
@@ -196,6 +223,26 @@ def get_band_info(raster3d: str, only_valid: bool = False) -> list[dict]:
     Parses from r3.info -h history (format: 'Band N: W nm, FWHM: F nm').
     Falls back to r.support metadata per band if history is missing.
     """
+    if _RAS3D:
+        import json as _json
+        _sidecar = raster3d + '.wl.json'
+        if os.path.isfile(_sidecar):
+            with open(_sidecar) as _fj:
+                _wl_data = _json.load(_fj)
+            _bands = []
+            for _entry in _wl_data:
+                _bands.append({
+                    'band': int(_entry['band']),
+                    'wavelength': float(_entry['wavelength']),
+                    'fwhm': float(_entry.get('fwhm', 10.0)),
+                    'valid': bool(_entry.get('valid', True)),
+                })
+            _bands.sort(key=lambda b: b['wavelength'])
+            if only_valid:
+                _bands = [b for b in _bands if b['valid']]
+            if _bands:
+                return _bands
+
     info = gs.raster3d_info(raster3d)
     depths = int(info['depths'])
 
@@ -1642,6 +1689,19 @@ def main(options, flags):
     conf_arr[nodata_mask] = np.nan
 
     # Write output rasters
+    if _RAS3D:
+        import ras3d as _r3
+        import ras3d_write as _r3w
+        _h = _r3.open_cube(input_map)
+        if output_map:
+            gs.message(f"Writing class map → {output_map}")
+            _r3w.write_raster2d(_r3w.outpath(output_map), class_map.astype(np.float32), _h)
+        if conf_map:
+            gs.message(f"Writing confidence map → {conf_map}")
+            _r3w.write_raster2d(_r3w.outpath(conf_map), conf_arr, _h)
+        _r3.close_cube(_h)
+        return 0
+
     reg = gs.region()
     _ascii_header = (
         f"north: {reg['n']}\n"
