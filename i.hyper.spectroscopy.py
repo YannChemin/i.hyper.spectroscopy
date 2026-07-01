@@ -217,11 +217,55 @@ def extract_band(raster3d: str, band_num: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _load_hyper_json_bands(raster3d: str) -> list[dict]:
+    """Read wavelength/fwhm/validity from i.hyper.import's JSON sidecar.
+
+    i.hyper.import (HyperMetadata) stores band metadata at
+    $MAPSET/grid3/<mapname>/hyper.json rather than in r3.support history,
+    so that must be checked before falling back to r3.info/r.support.
+    """
+    import json as _json
+
+    name, mapset = (raster3d.split('@', 1) if '@' in raster3d
+                     else (raster3d, None))
+    try:
+        env = gs.gisenv()
+        mapset = mapset or env['MAPSET']
+        path = os.path.join(env['GISDBASE'], env['LOCATION_NAME'], mapset,
+                            'grid3', name, 'hyper.json')
+    except Exception:
+        return []
+
+    if not os.path.isfile(path):
+        return []
+
+    with open(path) as _fj:
+        data = _json.load(_fj)
+
+    b = data.get('bands') or {}
+    wavelengths = b.get('wavelength')
+    if not wavelengths:
+        return []
+    fwhms = b.get('fwhm') or []
+    valids = b.get('validity') or []
+
+    bands = []
+    for i, wl in enumerate(wavelengths):
+        bands.append({
+            'band': i + 1,
+            'wavelength': float(wl),
+            'fwhm': float(fwhms[i]) if i < len(fwhms) else 10.0,
+            'valid': bool(valids[i]) if i < len(valids) else True,
+        })
+    return bands
+
+
 def get_band_info(raster3d: str, only_valid: bool = False) -> list[dict]:
     """Return sorted list of {band, wavelength, fwhm, valid} dicts.
 
-    Parses from r3.info -h history (format: 'Band N: W nm, FWHM: F nm').
-    Falls back to r.support metadata per band if history is missing.
+    Primary source is i.hyper.import's grid3/<map>/hyper.json sidecar.
+    Falls back to r3.info -h history (format: 'Band N: W nm, FWHM: F nm'),
+    then to r.support metadata per band if history is missing.
     """
     if _RAS3D:
         import json as _json
@@ -242,6 +286,15 @@ def get_band_info(raster3d: str, only_valid: bool = False) -> list[dict]:
                 _bands = [b for b in _bands if b['valid']]
             if _bands:
                 return _bands
+
+    json_bands = _load_hyper_json_bands(raster3d)
+    if json_bands:
+        json_bands.sort(key=lambda b: b['wavelength'])
+        if only_valid:
+            json_bands = [b for b in json_bands if b['valid']]
+            if not json_bands:
+                gs.fatal("No valid bands found (all marked valid=0).")
+        return json_bands
 
     info = gs.raster3d_info(raster3d)
     depths = int(info['depths'])
