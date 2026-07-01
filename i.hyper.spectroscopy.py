@@ -58,6 +58,15 @@
 # % guisection: Point mode
 # %end
 
+# %option
+# % key: ndre_threshold
+# % type: double
+# % required: no
+# % answer: 0.15
+# % description: Minimum NDRE (NIR vs red-edge) required to allow chlorophyll-dependent classes (vegetation, algae); screens out false positives on bare soil/rock. Set very negative (e.g. -1) to disable.
+# % guisection: Processing
+# %end
+
 # %flag
 # % key: n
 # % description: Only use bands marked as valid (valid=1) in metadata
@@ -102,6 +111,7 @@ import sys
 import os
 import ctypes
 import atexit
+import warnings
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -1296,6 +1306,47 @@ COMPOSITE_RULES: list[dict] = [
 CLASS_LABELS: list[str] = ["unknown"] + [r["name"] for r in COMPOSITE_RULES]
 CLASS_CATEGORIES: list[str] = [""] + [r["category"] for r in COMPOSITE_RULES]
 
+# ---------------------------------------------------------------------------
+# NDRE pre-screen for chlorophyll-dependent classes
+# ---------------------------------------------------------------------------
+#
+# The "chlorophyll_a+b" species is matched by *any* shallow (>=min_band_depth)
+# local reflectance dip in the 415-445nm or 670-695nm windows, and
+# "red_edge_inflection" likewise by any dip in 700-730nm. Bare mineral/soil
+# surfaces routinely show shallow local concavities in those same windows
+# from unrelated causes (Fe3+ charge-transfer edge curvature, clay/carbonate
+# combination-band shoulders, sensor/atmospheric-correction ripple), with
+# nothing in the rule itself checking the actual NIR-vs-red-edge reflectance
+# contrast that is what actually distinguishes live vegetation from bare
+# ground. Combined with green_vegetation's base_score=0.90 (the highest of
+# any rule), this lets bare desert pixels win the argmax purely on generic
+# shallow-depth coincidences. NDRE (Normalized Difference Red Edge) is used
+# here as an independent, physically-grounded pre-screen: pixels below the
+# threshold are barred from winning any rule that requires "chlorophyll_a+b"
+# (vegetation and chlorophyll-bearing algae/bloom classes), regardless of
+# what the band-depth matching found.
+
+_NDRE_RED_EDGE_NM = 710.0   # matches red_edge_inflection center (700-730nm)
+_NDRE_NIR_NM = 865.0        # NIR shoulder, clear of major water-vapor bands
+
+_CHLOROPHYLL_GATED_RULE_NAMES: set[str] = {
+    r["name"] for r in COMPOSITE_RULES if "chlorophyll_a+b" in r["required_species"]
+}
+_CHLOROPHYLL_GATED_RULE_INDICES: list[int] = [
+    i for i, r in enumerate(COMPOSITE_RULES) if r["name"] in _CHLOROPHYLL_GATED_RULE_NAMES
+]
+
+
+def _nearest_band_index(wavelengths: np.ndarray, target_nm: float) -> int:
+    return int(np.argmin(np.abs(wavelengths - target_nm)))
+
+
+def _safe_ndre(nir: np.ndarray, red_edge: np.ndarray) -> np.ndarray:
+    denom = nir + red_edge
+    with np.errstate(invalid='ignore', divide='ignore'):
+        ndre = np.where(np.abs(denom) > 1e-6, (nir - red_edge) / denom, np.nan)
+    return ndre
+
 
 # ---------------------------------------------------------------------------
 # Spectral interpretation engine (single-spectrum / point mode)
@@ -1320,6 +1371,8 @@ def _band_depth(feat_reflectance: float, feat_center: float,
 def interpret_spectrum(
     triplets: list[tuple[float, float, float]],
     min_band_depth: float = 0.02,
+    ndre: Optional[float] = None,
+    ndre_threshold: float = 0.15,
 ) -> SpectralInterpretation:
     """Interpret a reflectance spectrum from absorption feature triplets.
 
@@ -1327,12 +1380,24 @@ def interpret_spectrum(
     ----------
     triplets : list of (center_nm, fwhm_nm, reflectance)
     min_band_depth : minimum band depth to count as absorption
+    ndre : precomputed NDRE (NIR vs red-edge) for this pixel/spectrum, or
+        None to skip the pre-screen entirely
+    ndre_threshold : below this, chlorophyll-dependent composite rules
+        (vegetation, algae blooms) are barred regardless of band-depth match
 
     Returns
     -------
     SpectralInterpretation with ranked material hypotheses.
     """
     flags: list[str] = []
+    ndre_blocks_chlorophyll = (
+        ndre is not None and not np.isnan(ndre) and ndre < ndre_threshold
+    )
+    if ndre_blocks_chlorophyll:
+        flags.append(
+            f"NDRE={ndre:.3f} < {ndre_threshold}: chlorophyll-dependent classes "
+            f"({sorted(_CHLOROPHYLL_GATED_RULE_NAMES)}) screened out"
+        )
 
     # Step 0: Build AbsorptionFeature objects
     raw: list[AbsorptionFeature] = []
@@ -1398,6 +1463,8 @@ def interpret_spectrum(
     hypotheses: list[MaterialHypothesis] = []
 
     for rule in COMPOSITE_RULES:
+        if ndre_blocks_chlorophyll and rule["name"] in _CHLOROPHYLL_GATED_RULE_NAMES:
+            continue
         req = rule["required_species"]
         req_counts: dict[str, int] = {}
         for sp in req:
@@ -1494,9 +1561,13 @@ def _compute_depths_numpy(cube: np.ndarray, wavelengths: np.ndarray,
         mask = np.abs(wavelengths - wavelengths[i]) < margin
         mask[i] = False
         if mask.any():
-            with np.errstate(all='ignore'):
+            # All-NaN columns (true no-data pixels) are expected here and are
+            # handled right below by substituting continuum=1.0; suppress the
+            # resulting "All-NaN slice" RuntimeWarning, which np.errstate
+            # does not catch (it's raised via warnings, not a fp exception).
+            with np.errstate(all='ignore'), warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
                 local_max = np.nanmax(cube[mask], axis=0)
-            # All-NaN columns (masked/edge pixels): treat continuum as 1.0
             local_max = np.where(np.isnan(local_max), 1.0, local_max)
         else:
             local_max = np.ones(cube.shape[1])
@@ -1628,6 +1699,7 @@ def main(options, flags):
     output_map   = options['output']
     conf_map     = options['confidence']
     min_depth    = float(options['min_band_depth'])
+    ndre_thresh  = float(options.get('ndre_threshold', '0.15') or '0.15')
     coordinates  = options.get('coordinates', '')
     only_valid   = flags['n']
     info_mode    = flags['i']
@@ -1638,6 +1710,14 @@ def main(options, flags):
     bands = get_band_info(input_map, only_valid=only_valid)
     wavelengths = np.array([b['wavelength'] for b in bands], dtype=np.float64)
     fwhms       = np.array([b['fwhm']       for b in bands], dtype=np.float64)
+
+    red_edge_idx = _nearest_band_index(wavelengths, _NDRE_RED_EDGE_NM)
+    nir_idx = _nearest_band_index(wavelengths, _NDRE_NIR_NM)
+    gs.verbose(
+        f"NDRE pre-screen: red-edge band {red_edge_idx} "
+        f"({wavelengths[red_edge_idx]:.1f}nm), NIR band {nir_idx} "
+        f"({wavelengths[nir_idx]:.1f}nm), threshold={ndre_thresh}"
+    )
 
     # ── Info mode ──────────────────────────────────────────────────────────
     if info_mode:
@@ -1662,7 +1742,8 @@ def main(options, flags):
         gs.message(f"Extracting spectrum at E={east} N={north}")
         gs.verbose("Loading all bands via fast Z-slice extraction…")
         spectrum: list[tuple[float, float, float]] = []
-        for b in bands:
+        band_refl: dict[int, float] = {}
+        for z_idx, b in enumerate(bands):
             tmp = extract_band(input_map, b['band'])
             val_str = gs.read_command(
                 'r.what', map=tmp, coordinates=f"{east},{north}", quiet=True
@@ -1672,13 +1753,19 @@ def main(options, flags):
             except ValueError:
                 refl = float('nan')
             spectrum.append((b['wavelength'], b['fwhm'], refl))
+            band_refl[z_idx] = refl
+
+        ndre = _safe_ndre(np.array([band_refl[nir_idx]]),
+                          np.array([band_refl[red_edge_idx]]))[0]
+        gs.message(f"NDRE = {ndre:.3f} (threshold {ndre_thresh})")
 
         # Filter out nodata
         spectrum = [(c, fw, r) for c, fw, r in spectrum if not (r != r)]  # NaN check
         if not spectrum:
             gs.fatal("All band values are nodata at the specified coordinates.")
 
-        result = interpret_spectrum(spectrum, min_band_depth=min_depth)
+        result = interpret_spectrum(spectrum, min_band_depth=min_depth,
+                                    ndre=ndre, ndre_threshold=ndre_thresh)
         print_interpretation(result, verbose=verbose)
         return 0
 
@@ -1697,49 +1784,136 @@ def main(options, flags):
     # depths (default region may have depths=1).
     gs.run_command('g.region', raster3d=input_map)
 
-    gs.message(f"Loading {Z} bands ({nrows}×{ncols} pixels) via fast Z-slice…")
-    cube = np.full((Z, n_pixels), np.nan, dtype=np.float64)
-
+    gs.message(f"Extracting {Z} bands ({nrows}×{ncols} pixels) via fast Z-slice…")
+    tmp_names = []
     for z_idx, b in enumerate(bands):
         gs.percent(z_idx, Z, 2)
-        tmp = extract_band(input_map, b['band'])
-        # Read 2D raster into numpy array via r.out.bin or grass.pygrass
+        tmp_names.append(extract_band(input_map, b['band']))
+    gs.percent(Z, Z, 2)
+
+    # Process the cube in row-chunks of ~TARGET_CHUNK_PIXELS pixels so peak
+    # memory stays roughly constant regardless of scene size, instead of ever
+    # materializing a full (bands, pixels) cube plus a same-size depths array
+    # simultaneously (which for a full EMIT scene can require tens of GB).
+    gs.message("Computing band depths and scoring composites (tiled)…")
+    TARGET_CHUNK_PIXELS = 300_000
+    chunk_rows = max(1, TARGET_CHUNK_PIXELS // ncols)
+
+    class_map = np.zeros(n_pixels, dtype=np.int32)
+    conf_arr = np.zeros(n_pixels, dtype=np.float32)
+    nodata_mask = np.zeros(n_pixels, dtype=bool)
+    n_ndre_screened = 0
+
+    try:
+        from grass.pygrass.raster import RasterRow
+        handles = [RasterRow(name) for name in tmp_names]
+        for h in handles:
+            h.open()
+        use_pygrass = True
+    except Exception:
+        gs.warning("grass.pygrass unavailable — falling back to loading the "
+                   "full cube at once (higher memory use).")
+        use_pygrass = False
+
+    if use_pygrass:
         try:
-            from grass.pygrass.raster import RasterRow
-            with RasterRow(tmp) as rmap:
-                arr = np.array(rmap, dtype=np.float64).ravel()
-        except Exception:
-            # Fallback: write ASCII and read back
+            n_chunks = (nrows + chunk_rows - 1) // chunk_rows
+            for c_idx, row_start in enumerate(range(0, nrows, chunk_rows)):
+                gs.percent(c_idx, n_chunks, 2)
+                row_end = min(row_start + chunk_rows, nrows)
+                n_rows_chunk = row_end - row_start
+                n_pix_chunk = n_rows_chunk * ncols
+
+                chunk = np.empty((Z, n_pix_chunk), dtype=np.float32)
+                for z_idx, h in enumerate(handles):
+                    for r in range(row_start, row_end):
+                        row_arr = np.array(h[r], dtype=np.float32)
+                        offset = (r - row_start) * ncols
+                        chunk[z_idx, offset:offset + ncols] = row_arr
+
+                depths_chunk = _compute_depths_numpy(chunk, wavelengths,
+                                                      margin=_CONTINUUM_MARGIN)
+                scores_chunk = score_composites_numpy(depths_chunk, wavelengths,
+                                                       min_depth=min_depth)
+
+                # NDRE pre-screen: bar chlorophyll-dependent rules (vegetation,
+                # algae blooms) on pixels that don't actually look vegetated,
+                # regardless of what the generic band-depth matching found.
+                ndre_chunk = _safe_ndre(chunk[nir_idx], chunk[red_edge_idx])
+                veg_blocked = ndre_chunk < ndre_thresh
+                if veg_blocked.any():
+                    for gi in _CHLOROPHYLL_GATED_RULE_INDICES:
+                        scores_chunk[gi, veg_blocked] = 0.0
+                    n_ndre_screened += int(veg_blocked.sum())
+
+                best_idx = np.argmax(scores_chunk, axis=0)
+                best_score = scores_chunk[best_idx, np.arange(n_pix_chunk)]
+
+                cls = (best_idx + 1).astype(np.int32)
+                cls[best_score < 0.1] = 0
+                conf = best_score.astype(np.float32)
+
+                nodata_chunk = np.all(np.isnan(chunk), axis=0)
+                cls[nodata_chunk] = 0
+                conf[nodata_chunk] = np.nan
+
+                pix_start = row_start * ncols
+                pix_end = row_end * ncols
+                class_map[pix_start:pix_end] = cls
+                conf_arr[pix_start:pix_end] = conf
+                nodata_mask[pix_start:pix_end] = nodata_chunk
+
+                del chunk, depths_chunk, scores_chunk
+            gs.percent(n_chunks, n_chunks, 2)
+        finally:
+            for h in handles:
+                h.close()
+    else:
+        # Fallback: original full-cube path (float32 instead of float64 to
+        # at least halve peak memory versus the pre-fix behaviour).
+        cube = np.full((Z, n_pixels), np.nan, dtype=np.float32)
+        for z_idx, tmp in enumerate(tmp_names):
             ascii_out = gs.tempfile()
             gs.run_command('r.out.ascii', input=tmp, output=ascii_out,
                            null_value='nan', quiet=True)
-            arr = np.loadtxt(ascii_out, dtype=np.float64).ravel()
+            arr = np.loadtxt(ascii_out, dtype=np.float32).ravel()
             os.unlink(ascii_out)
-        if arr.size == n_pixels:
-            cube[z_idx] = arr
-        else:
-            gs.warning(f"Band {b['band']}: unexpected array size {arr.size}, expected {n_pixels}")
+            if arr.size == n_pixels:
+                cube[z_idx] = arr
+            else:
+                gs.warning(f"Band {bands[z_idx]['band']}: unexpected array "
+                           f"size {arr.size}, expected {n_pixels}")
 
-    gs.percent(Z, Z, 2)
-    gs.message("Computing band depths…")
-    depths = _compute_depths_numpy(cube, wavelengths, margin=_CONTINUUM_MARGIN)
+        depths = _compute_depths_numpy(cube, wavelengths, margin=_CONTINUUM_MARGIN)
+        scores = score_composites_numpy(depths, wavelengths, min_depth=min_depth)
 
-    gs.message("Scoring composite rules per pixel…")
-    scores = score_composites_numpy(depths, wavelengths, min_depth=min_depth)
-    # scores: (n_rules, n_pixels)
+        ndre_full = _safe_ndre(cube[nir_idx], cube[red_edge_idx])
+        veg_blocked = ndre_full < ndre_thresh
+        if veg_blocked.any():
+            for gi in _CHLOROPHYLL_GATED_RULE_INDICES:
+                scores[gi, veg_blocked] = 0.0
+            n_ndre_screened += int(veg_blocked.sum())
 
-    # Class map: argmax+1 (1-based), 0 where all scores == 0
-    best_idx = np.argmax(scores, axis=0)          # (n_pixels,)  0-based rule idx
-    best_score = scores[best_idx, np.arange(n_pixels)]
+        best_idx = np.argmax(scores, axis=0)
+        best_score = scores[best_idx, np.arange(n_pixels)]
+        class_map = (best_idx + 1).astype(np.int32)
+        class_map[best_score < 0.1] = 0
+        conf_arr = best_score.astype(np.float32)
+        nodata_mask = np.all(np.isnan(cube), axis=0)
+        class_map[nodata_mask] = 0
+        conf_arr[nodata_mask] = np.nan
+        del cube, depths, scores
 
-    class_map = (best_idx + 1).reshape(nrows, ncols).astype(np.int32)
-    class_map[best_score.reshape(nrows, ncols) < 0.1] = 0
+    class_map = class_map.reshape(nrows, ncols)
+    conf_arr = conf_arr.reshape(nrows, ncols)
+    nodata_mask = nodata_mask.reshape(nrows, ncols)
 
-    conf_arr = best_score.reshape(nrows, ncols).astype(np.float32)
-    # Set nodata pixels to 0
-    nodata_mask = np.all(np.isnan(cube), axis=0).reshape(nrows, ncols)
-    class_map[nodata_mask] = 0
-    conf_arr[nodata_mask] = np.nan
+    if n_ndre_screened:
+        gs.message(
+            f"NDRE pre-screen (threshold={ndre_thresh}): barred "
+            f"{n_ndre_screened} pixel(s) from chlorophyll-dependent classes "
+            f"({', '.join(sorted(_CHLOROPHYLL_GATED_RULE_NAMES))})"
+        )
 
     # Write output rasters
     if _RAS3D:
