@@ -67,6 +67,24 @@
 # % guisection: Processing
 # %end
 
+# %option
+# % key: sand_albedo_threshold
+# % type: double
+# % required: no
+# % answer: 0.25
+# % description: Minimum broadband 500-900nm reflectance for the quartz/feldspar sand fallback (quartz and feldspar have no diagnostic VNIR-SWIR absorption feature, so they are identified by elimination + brightness rather than a positive match). Set to 1.0 or higher to disable.
+# % guisection: Processing
+# %end
+
+# %option
+# % key: species_percentile
+# % type: double
+# % required: no
+# % answer: 90
+# % description: Full-map mode only. A species counts as detected only where its band depth is ALSO above this percentile of its own depth distribution across the scene (in addition to min_band_depth), so a broad slope common to the whole scene (e.g. iron-oxide/clay desert soil) does not register as a "feature" everywhere. Set to 0 to disable (absolute thresholds only).
+# % guisection: Processing
+# %end
+
 # %flag
 # % key: n
 # % description: Only use bands marked as valid (valid=1) in metadata
@@ -109,7 +127,6 @@ if not _os.environ.get('GISBASE'):
 
 import sys
 import os
-import ctypes
 import atexit
 import warnings
 from dataclasses import dataclass, field
@@ -134,53 +151,19 @@ def _cleanup_tmp_rasters():
 atexit.register(_cleanup_tmp_rasters)
 
 # ---------------------------------------------------------------------------
-# Fast 3D raster Z-slice extraction (tile-bulk, RASTER3D_NO_CACHE)
+# 3D raster Z-slice extraction
 # ---------------------------------------------------------------------------
-
-_G3D_LIB = None
-
-
-def _load_g3d_lib():
-    """Load libgrass_g3d and set up Rast3d_extract_z_slice() signature."""
-    # Use GISBASE from the running GRASS session — avoids picking up a
-    # different GRASS installation via PATH.
-    lib_dir = os.path.join(os.environ['GISBASE'], 'lib')
-
-    # libgrass_gis must be loaded first (RTLD_GLOBAL) so its symbols are
-    # visible to libgrass_g3d; then call G__no_gisinit() to satisfy the
-    # "not initialized" check without repeating the mapset permission check
-    # (GRASS already validated the mapset when the module was invoked).
-    # The version arg is GIS_H_VERSION = GRASS_HEADERS_VERSION from the
-    # installed version.h — not GRASS_VERSION_NUMBER, not `grass --config`.
-    import re as _re
-    _vh = os.path.join(os.environ['GISBASE'], 'include', 'grass', 'version.h')
-    with open(_vh) as _f:
-        _m = _re.search(r'#define\s+GRASS_HEADERS_VERSION\s+"([^"]+)"', _f.read())
-    headers_version = (_m.group(1).encode() if _m else b"")
-
-    gis_lib = ctypes.CDLL(os.path.join(lib_dir, 'libgrass_gis.so'),
-                          mode=ctypes.RTLD_GLOBAL)
-    gis_lib.G__no_gisinit.restype = None
-    gis_lib.G__no_gisinit.argtypes = [ctypes.c_char_p]
-    gis_lib.G__no_gisinit(headers_version)
-
-    lib = ctypes.CDLL(os.path.join(lib_dir, 'libgrass_g3d.so'))
-    lib.Rast3d_extract_z_slice.restype = ctypes.c_int
-    lib.Rast3d_extract_z_slice.argtypes = [
-        ctypes.c_char_p,   # name3d
-        ctypes.c_char_p,   # mapset3d (NULL = search)
-        ctypes.c_int,      # z  (0-based)
-        ctypes.c_char_p,   # name2d
-    ]
-    return lib
 
 
 def extract_band(raster3d: str, band_num: int) -> str:
     """Extract band_num (1-based) from raster3d into a temporary 2D raster.
 
-    Uses Rast3d_extract_z_slice() with RASTER3D_NO_CACHE: each tile at the
-    target Z level is read exactly once (tile-bulk path), vs. one function
-    call per voxel with the default cache API.
+    Uses the standard r3.to.rast module, windowing the 3D region to a single
+    depth slice. (Previously used a custom Rast3d_extract_z_slice() ctypes
+    fast-path, but that corrupts memory -- malloc(): mismatching
+    next->prev_size -- when the active region is a sub-window of the
+    raster's native footprint rather than its full extent; r3.to.rast has no
+    such issue and self-reconciles any 2D/3D region mismatch.)
 
     Returns the temporary 2D raster name (registered for cleanup at exit).
     """
@@ -197,27 +180,19 @@ def extract_band(raster3d: str, band_num: int) -> str:
         _TMP_RASTERS.append(tmp_name)
         return tmp_name
 
-    global _G3D_LIB
-    if _G3D_LIB is None:
-        _G3D_LIB = _load_g3d_lib()
-
     z = band_num - 1  # 1-based → 0-based
     base = raster3d.replace('@', '_').replace('#', '_').replace('.', '_')
-    tmp_name = f"tmp_spectroscopy_{base}_{band_num}"
+    tmp_prefix = f"tmp_spectroscopy_{base}_{band_num}"
+    tmp_name = f"{tmp_prefix}_00001"  # r3.to.rast's single-slice output suffix
 
-    if '@' in raster3d:
-        name3d, mapset3d = raster3d.split('@', 1)
-    else:
-        name3d, mapset3d = raster3d, ''
-
-    ret = _G3D_LIB.Rast3d_extract_z_slice(
-        name3d.encode(),
-        mapset3d.encode() if mapset3d else None,
-        ctypes.c_int(z),
-        tmp_name.encode(),
-    )
-    if ret != 0:
-        gs.fatal(f"Rast3d_extract_z_slice failed for band {band_num} of {raster3d}")
+    saved = gs.parse_command('g.region', flags='3g')
+    gs.run_command('g.region', b=z, t=z + 1, tbres=1)
+    try:
+        gs.run_command('r3.to.rast', input=raster3d, output=tmp_prefix,
+                       overwrite=True, quiet=True)
+    finally:
+        gs.run_command('g.region', b=saved['b'], t=saved['t'],
+                       tbres=saved['tbres'])
 
     _TMP_RASTERS.append(tmp_name)
     return tmp_name
@@ -1191,9 +1166,20 @@ COMPOSITE_RULES: list[dict] = [
      "base_score": 0.80,
      "notes": "Lepidocrocite γ-FeOOH 475+1000nm pair; waterlogged gleyed soils; redox-oscillation indicator"},
     {"name": "acid_mine_drainage",       "category": "geological",
-     "required_species": ["ferrihydrite", "jarosite"],
-     "bonus_species": ["szomolnokite_Fe2+", "Fe3+_goethite"], "base_score": 0.85,
-     "notes": "AMD assemblage: ferrihydrite+jarosite±szomolnokite; low-pH Fe-oxidation drainage signature"},
+     "required_species": ["ferrihydrite", "ferrihydrite", "jarosite"],
+     "min_depth_overrides": {"jarosite": 0.08},
+     "bonus_species": ["szomolnokite_Fe2+", "Fe3+_goethite"], "base_score": 0.90,
+     "notes": "AMD assemblage: ferrihydrite (both 430+750nm bands)+jarosite±szomolnokite; "
+              "low-pH Fe-oxidation drainage signature. Requiring only one ferrihydrite band "
+              "and the default 0.02 jarosite depth let ordinary hematite/goethite (common, "
+              "unrelated) false-positive via their shared generic blue-edge curvature and "
+              "incidental shallow ~2265nm dips; tightened against USGS splib07 reference "
+              "spectra (real jarosite/ferrihydrite: 0.11-0.17 depth @2265nm vs hematite/"
+              "goethite's incidental 0.03-0.06). base_score raised to 0.90 (from 0.85, "
+              "above the 'ferrihydrite' rule's max bonus-boosted 0.8715) so that when "
+              "AMD's own stricter jarosite requirement is met, this more specific "
+              "diagnosis deterministically outranks the generic ferrihydrite-alone label "
+              "for the same pixel, instead of losing to it on an incidental bonus factor."},
     {"name": "siderite",                 "category": "mineral",
      "required_species": ["siderite_Fe2+", "siderite_CO3"],
      "base_score": 0.81,
@@ -1347,6 +1333,45 @@ def _safe_ndre(nir: np.ndarray, red_edge: np.ndarray) -> np.ndarray:
         ndre = np.where(np.abs(denom) > 1e-6, (nir - red_edge) / denom, np.nan)
     return ndre
 
+# ---------------------------------------------------------------------------
+# Quartz/feldspar sand: elimination-based fallback (no diagnostic feature)
+# ---------------------------------------------------------------------------
+#
+# Unlike every other class here, quartz and feldspar have no diagnostic
+# electronic/vibrational absorption feature in 400-2500nm reflectance
+# (confirmed against USGS splib07 reference spectra for quartz sand, albite,
+# anorthite and microcline: in every case the only "feature" the same
+# band-depth algorithm finds is the generic UV/blue absorption edge shared by
+# nearly all minerals -- not something diagnostic). They are normally mapped
+# via TIR emissivity (Christiansen feature, reststrahlen bands ~8-12um),
+# outside this instrument's range. So instead of a positive species match,
+# this class is assigned by elimination: no other rule scored above
+# threshold, NDRE has already ruled out vegetation, and the pixel is bright
+# (high broadband VNIR reflectance, as bare quartz/feldspar sand typically
+# is). It is intentionally excluded from COMPOSITE_RULES / the normal
+# per-pixel scoring loop and applied as a post-argmax fallback instead.
+
+_SAND_BRIGHTNESS_RANGE_NM = (500.0, 900.0)
+QUARTZOFELDSPATHIC_SAND_LABEL = "quartzofeldspathic_sand"
+QUARTZOFELDSPATHIC_SAND_CONFIDENCE = 0.5  # modest: elimination, not a positive match
+
+
+def _broadband_reflectance(cube_or_chunk: np.ndarray, bright_mask: np.ndarray) -> np.ndarray:
+    # All-NaN columns (true no-data pixels) are expected here and produce NaN
+    # output, which is fine (those pixels are masked out separately via
+    # nodata_mask); suppress the resulting benign "Mean of empty slice"
+    # RuntimeWarning, same rationale as _compute_depths_numpy's nanmax guard.
+    with np.errstate(invalid='ignore'), warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        return np.nanmean(cube_or_chunk[bright_mask], axis=0)
+
+
+# Reserve a class number for the fallback, appended after (not part of)
+# COMPOSITE_RULES so it never enters the normal per-pixel scoring loop.
+CLASS_LABELS.append(QUARTZOFELDSPATHIC_SAND_LABEL)
+CLASS_CATEGORIES.append("geological")
+QUARTZOFELDSPATHIC_SAND_CLASS_IDX = len(CLASS_LABELS) - 1
+
 
 # ---------------------------------------------------------------------------
 # Spectral interpretation engine (single-spectrum / point mode)
@@ -1466,11 +1491,12 @@ def interpret_spectrum(
         if ndre_blocks_chlorophyll and rule["name"] in _CHLOROPHYLL_GATED_RULE_NAMES:
             continue
         req = rule["required_species"]
+        overrides = rule.get("min_depth_overrides", {})
         req_counts: dict[str, int] = {}
         for sp in req:
             req_counts[sp] = req_counts.get(sp, 0) + 1
         if not all(
-            sp in detected and len(species_map.get(sp, [])) >= cnt
+            sum(1 for fe in species_map.get(sp, []) if fe[0].depth >= overrides.get(sp, min_band_depth)) >= cnt
             for sp, cnt in req_counts.items()
         ):
             continue
@@ -1576,6 +1602,48 @@ def _compute_depths_numpy(cube: np.ndarray, wavelengths: np.ndarray,
     return depths
 
 
+# Species that gate at least one rule's required_species -- these are the
+# only ones worth computing scene-wide percentile statistics for (bonus/
+# absent-only species are secondary signals, left on the absolute floor).
+_REQUIRED_SPECIES_NAMES: set[str] = {
+    sp for r in COMPOSITE_RULES for sp in r["required_species"]
+}
+
+
+def _accumulate_species_best_depth(depths_chunk: np.ndarray,
+                                    sp_index: dict[str, list[int]],
+                                    best_depth: dict[str, np.ndarray],
+                                    pix_start: int, pix_end: int) -> None:
+    """Fill best_depth[sp][pix_start:pix_end] with this chunk's per-pixel max
+    depth within each required species' band set (NaN where that species has
+    no bands in this cube)."""
+    for sp, arr in best_depth.items():
+        band_idxs = sp_index.get(sp, [])
+        if not band_idxs:
+            continue
+        # All-NaN columns (true no-data pixels) are expected and yield NaN
+        # here, same benign case as _compute_depths_numpy's nanmax guard.
+        with np.errstate(invalid='ignore'), warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            arr[pix_start:pix_end] = np.nanmax(depths_chunk[band_idxs], axis=0)
+
+
+def _species_percentile_thresholds(best_depth: dict[str, np.ndarray],
+                                    percentile: float) -> dict[str, float]:
+    """Scene-wide percentile (0-100) of each species' best-depth distribution.
+
+    percentile <= 0 disables the mechanism (returns an all-zero mapping,
+    which combined via max() with the absolute floor is a no-op).
+    """
+    if percentile <= 0:
+        return {sp: 0.0 for sp in best_depth}
+    thresholds: dict[str, float] = {}
+    for sp, arr in best_depth.items():
+        valid = arr[~np.isnan(arr)]
+        thresholds[sp] = float(np.percentile(valid, percentile)) if valid.size else 0.0
+    return thresholds
+
+
 def _build_band_species_index(wavelengths: np.ndarray) -> dict[str, list[int]]:
     """For each DB species, list of band indices that fall within its range."""
     idx: dict[str, list[int]] = {}
@@ -1590,7 +1658,9 @@ def _build_band_species_index(wavelengths: np.ndarray) -> dict[str, list[int]]:
 
 
 def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
-                            min_depth: float = 0.02) -> np.ndarray:
+                            min_depth: float = 0.02,
+                            species_percentile_thresholds: Optional[dict[str, float]] = None
+                            ) -> np.ndarray:
     """Score all composite rules per pixel using vectorized numpy.
 
     Parameters
@@ -1598,6 +1668,15 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
     depths      : shape (Z, pixels), band depths from _compute_depths_numpy
     wavelengths : shape (Z,)
     min_depth   : minimum depth to count a species as detected
+    species_percentile_thresholds : optional species -> depth-value mapping,
+        typically a percentile of that species' depth distribution across
+        the whole scene. Combined with min_depth/per-rule overrides by
+        taking the max, so a species is only "detected" where its depth is
+        BOTH above the absolute floor AND an outlier relative to this
+        scene's own baseline for that species -- guards against a broad,
+        gently-sloped (not flat) continuum common to a material across the
+        whole scene registering as a "feature" everywhere purely from local
+        band-depth geometry, not a genuine localized absorption.
 
     Returns
     -------
@@ -1607,22 +1686,33 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
     sp_index = _build_band_species_index(wavelengths)
     n_rules = len(COMPOSITE_RULES)
     scores = np.zeros((n_rules, n_pixels), dtype=np.float32)
+    pct_thresholds = species_percentile_thresholds or {}
+
+    def _effective_threshold(sp: str, overrides: dict[str, float]) -> float:
+        return max(overrides.get(sp, min_depth), pct_thresholds.get(sp, 0.0))
 
     # Pre-compute detection map: species → bool array (n_pixels,)
-    def _species_detected(sp: str) -> np.ndarray:
+    def _species_detected(sp: str, threshold: float) -> np.ndarray:
         band_idxs = sp_index.get(sp, [])
         if not band_idxs:
             return np.zeros(n_pixels, dtype=bool)
-        return np.any(depths[band_idxs] >= min_depth, axis=0)
+        return np.any(depths[band_idxs] >= threshold, axis=0)
 
-    def _species_n_detections(sp: str) -> np.ndarray:
+    def _species_n_detections(sp: str, threshold: float) -> np.ndarray:
         band_idxs = sp_index.get(sp, [])
         if not band_idxs:
             return np.zeros(n_pixels, dtype=np.int32)
-        return np.sum(depths[band_idxs] >= min_depth, axis=0).astype(np.int32)
+        return np.sum(depths[band_idxs] >= threshold, axis=0).astype(np.int32)
 
     for r_idx, rule in enumerate(COMPOSITE_RULES):
         req = rule["required_species"]
+        # Some rules need a stricter depth than the global default for a
+        # specific species, when its generic detection window coincidentally
+        # overlaps a common, unrelated material's ordinary spectral shape
+        # (see acid_mine_drainage: a shallow jarosite-window dip is common in
+        # ordinary hematite/goethite, not just genuine jarosite).
+        overrides = rule.get("min_depth_overrides", {})
+
         # Count how many times each species is required
         req_counts: dict[str, int] = {}
         for sp in req:
@@ -1631,14 +1721,15 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
         # All required species must be detected sufficient times
         all_met = np.ones(n_pixels, dtype=bool)
         for sp, cnt in req_counts.items():
+            thresh = _effective_threshold(sp, overrides)
             if cnt == 1:
-                all_met &= _species_detected(sp)
+                all_met &= _species_detected(sp, thresh)
             else:
-                all_met &= (_species_n_detections(sp) >= cnt)
+                all_met &= (_species_n_detections(sp, thresh) >= cnt)
 
         # Required absent species
         for sp in rule.get("required_absent", []):
-            all_met &= ~_species_detected(sp)
+            all_met &= ~_species_detected(sp, _effective_threshold(sp, overrides))
 
         if not np.any(all_met):
             continue
@@ -1646,7 +1737,7 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
         # Bonus species
         bonus_count = np.zeros(n_pixels, dtype=np.float32)
         for sp in rule.get("bonus_species", []):
-            bonus_count += _species_detected(sp).astype(np.float32)
+            bonus_count += _species_detected(sp, _effective_threshold(sp, overrides)).astype(np.float32)
 
         bonus_factor = 1.0 + 0.05 * bonus_count
         score = np.minimum(1.0, rule["base_score"] * bonus_factor).astype(np.float32)
@@ -1700,6 +1791,8 @@ def main(options, flags):
     conf_map     = options['confidence']
     min_depth    = float(options['min_band_depth'])
     ndre_thresh  = float(options.get('ndre_threshold', '0.15') or '0.15')
+    sand_albedo_thresh = float(options.get('sand_albedo_threshold', '0.25') or '0.25')
+    species_percentile = float(options.get('species_percentile', '90') or '90')
     coordinates  = options.get('coordinates', '')
     only_valid   = flags['n']
     info_mode    = flags['i']
@@ -1717,6 +1810,14 @@ def main(options, flags):
         f"NDRE pre-screen: red-edge band {red_edge_idx} "
         f"({wavelengths[red_edge_idx]:.1f}nm), NIR band {nir_idx} "
         f"({wavelengths[nir_idx]:.1f}nm), threshold={ndre_thresh}"
+    )
+
+    bright_lo, bright_hi = _SAND_BRIGHTNESS_RANGE_NM
+    bright_mask = (wavelengths >= bright_lo) & (wavelengths <= bright_hi)
+    gs.verbose(
+        f"Quartz/feldspar sand fallback: broadband "
+        f"{bright_lo:.0f}-{bright_hi:.0f}nm ({int(bright_mask.sum())} bands), "
+        f"albedo threshold={sand_albedo_thresh}"
     )
 
     # ── Info mode ──────────────────────────────────────────────────────────
@@ -1760,7 +1861,7 @@ def main(options, flags):
         gs.message(f"NDRE = {ndre:.3f} (threshold {ndre_thresh})")
 
         # Filter out nodata
-        spectrum = [(c, fw, r) for c, fw, r in spectrum if not (r != r)]  # NaN check
+        spectrum = [(c, fw, r) for c, fw, r in spectrum if not np.isnan(r)]
         if not spectrum:
             gs.fatal("All band values are nodata at the specified coordinates.")
 
@@ -1773,16 +1874,29 @@ def main(options, flags):
     if not output_map and not conf_map:
         gs.fatal("Specify output= and/or confidence= for full-map mode.")
 
-    info = gs.raster3d_info(input_map)
-    nrows = int(info['rows'])
-    ncols = int(info['cols'])
+    # Align the 3D computational region's depth window to the raster's own
+    # native depth stack (bottom/top/tbres -- the caller's region may have
+    # depths=1 by default) while preserving the caller's horizontal
+    # extent/resolution. GRASS keeps a *separate* 3D region (rows3/cols3/
+    # nsres3/ewres3) alongside the 2D one, and it is sticky across the
+    # whole mapset (persisted in WIND, outliving this process). Never call
+    # `g.region raster3d=<map>` -- it resets BOTH the 2D and 3D region to
+    # the raster's full native footprint, silently discarding any smaller
+    # area the caller had selected; merely restoring n/s/e/w/rows/cols
+    # afterwards only fixes the 2D side, leaving 2D/3D mismatched. Instead
+    # sync the 3D horizontal resolution to the already-correct 2D one
+    # directly, and set the depth window from the raster's own metadata.
+    depth_info = gs.parse_command('r3.info', map=input_map, flags='g')
+    region = gs.region()
+    gs.run_command('g.region',
+                   nsres3=region['nsres'], ewres3=region['ewres'],
+                   b=depth_info['bottom'], t=depth_info['top'],
+                   tbres=depth_info['tbres'])
+
+    nrows = int(region['rows'])
+    ncols = int(region['cols'])
     n_pixels = nrows * ncols
     Z = len(bands)
-
-    # Align the 3D computational region to the raster so that
-    # Rast3d_get_window() inside Rast3d_extract_z_slice() sees the correct
-    # depths (default region may have depths=1).
-    gs.run_command('g.region', raster3d=input_map)
 
     gs.message(f"Extracting {Z} bands ({nrows}×{ncols} pixels) via fast Z-slice…")
     tmp_names = []
@@ -1803,6 +1917,7 @@ def main(options, flags):
     conf_arr = np.zeros(n_pixels, dtype=np.float32)
     nodata_mask = np.zeros(n_pixels, dtype=bool)
     n_ndre_screened = 0
+    n_sand_fallback = 0
 
     try:
         from grass.pygrass.raster import RasterRow
@@ -1818,23 +1933,61 @@ def main(options, flags):
     if use_pygrass:
         try:
             n_chunks = (nrows + chunk_rows - 1) // chunk_rows
-            for c_idx, row_start in enumerate(range(0, nrows, chunk_rows)):
-                gs.percent(c_idx, n_chunks, 2)
-                row_end = min(row_start + chunk_rows, nrows)
-                n_rows_chunk = row_end - row_start
-                n_pix_chunk = n_rows_chunk * ncols
 
-                chunk = np.empty((Z, n_pix_chunk), dtype=np.float32)
+            def _read_chunk(row_start: int, row_end: int) -> np.ndarray:
+                n_pix = (row_end - row_start) * ncols
+                chunk = np.empty((Z, n_pix), dtype=np.float32)
                 for z_idx, h in enumerate(handles):
                     for r in range(row_start, row_end):
                         row_arr = np.array(h[r], dtype=np.float32)
                         offset = (r - row_start) * ncols
                         chunk[z_idx, offset:offset + ncols] = row_arr
+                return chunk
+
+            # Pass 1: accumulate each required species' best (max) depth per
+            # pixel across the whole scene, to derive scene-relative
+            # percentile thresholds (see score_composites_numpy docstring)
+            # before any classification decision is made.
+            sp_index = _build_band_species_index(wavelengths)
+            best_depth = {sp: np.full(n_pixels, np.nan, dtype=np.float32)
+                          for sp in _REQUIRED_SPECIES_NAMES}
+            if species_percentile > 0:
+                gs.message(f"Pass 1/2: scene depth statistics "
+                           f"(percentile={species_percentile})…")
+                for c_idx, row_start in enumerate(range(0, nrows, chunk_rows)):
+                    gs.percent(c_idx, n_chunks, 2)
+                    row_end = min(row_start + chunk_rows, nrows)
+                    chunk = _read_chunk(row_start, row_end)
+                    depths_chunk = _compute_depths_numpy(chunk, wavelengths,
+                                                          margin=_CONTINUUM_MARGIN)
+                    pix_start = row_start * ncols
+                    pix_end = row_end * ncols
+                    _accumulate_species_best_depth(depths_chunk, sp_index,
+                                                    best_depth, pix_start, pix_end)
+                    del chunk, depths_chunk
+                gs.percent(n_chunks, n_chunks, 2)
+            species_pct_thresholds = _species_percentile_thresholds(
+                best_depth, species_percentile)
+            del best_depth
+            if species_percentile > 0:
+                for sp, thresh in sorted(species_pct_thresholds.items(),
+                                         key=lambda kv: -kv[1])[:10]:
+                    gs.verbose(f"  species_percentile[{sp}] = {thresh:.4f}")
+
+            # Pass 2: classify, gating required-species detection by both the
+            # absolute floor and the scene-relative percentile threshold.
+            gs.message("Pass 2/2: scoring composites…")
+            for c_idx, row_start in enumerate(range(0, nrows, chunk_rows)):
+                gs.percent(c_idx, n_chunks, 2)
+                row_end = min(row_start + chunk_rows, nrows)
+                n_pix_chunk = (row_end - row_start) * ncols
+                chunk = _read_chunk(row_start, row_end)
 
                 depths_chunk = _compute_depths_numpy(chunk, wavelengths,
                                                       margin=_CONTINUUM_MARGIN)
-                scores_chunk = score_composites_numpy(depths_chunk, wavelengths,
-                                                       min_depth=min_depth)
+                scores_chunk = score_composites_numpy(
+                    depths_chunk, wavelengths, min_depth=min_depth,
+                    species_percentile_thresholds=species_pct_thresholds)
 
                 # NDRE pre-screen: bar chlorophyll-dependent rules (vegetation,
                 # algae blooms) on pixels that don't actually look vegetated,
@@ -1856,6 +2009,19 @@ def main(options, flags):
                 nodata_chunk = np.all(np.isnan(chunk), axis=0)
                 cls[nodata_chunk] = 0
                 conf[nodata_chunk] = np.nan
+
+                # Quartz/feldspar sand fallback: no diagnostic feature exists
+                # for these, so pixels left unclassified (no rule fired),
+                # already screened as non-vegetated, and bright are assigned
+                # here by elimination rather than a positive species match.
+                broadband_chunk = _broadband_reflectance(chunk, bright_mask)
+                sand_fallback = (
+                    (cls == 0) & ~nodata_chunk & (ndre_chunk < ndre_thresh)
+                    & (broadband_chunk > sand_albedo_thresh)
+                )
+                cls[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CLASS_IDX
+                conf[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CONFIDENCE
+                n_sand_fallback += int(sand_fallback.sum())
 
                 pix_start = row_start * ncols
                 pix_end = row_end * ncols
@@ -1885,7 +2051,18 @@ def main(options, flags):
                            f"size {arr.size}, expected {n_pixels}")
 
         depths = _compute_depths_numpy(cube, wavelengths, margin=_CONTINUUM_MARGIN)
-        scores = score_composites_numpy(depths, wavelengths, min_depth=min_depth)
+
+        sp_index = _build_band_species_index(wavelengths)
+        best_depth = {sp: np.full(n_pixels, np.nan, dtype=np.float32)
+                      for sp in _REQUIRED_SPECIES_NAMES}
+        _accumulate_species_best_depth(depths, sp_index, best_depth, 0, n_pixels)
+        species_pct_thresholds = _species_percentile_thresholds(
+            best_depth, species_percentile)
+        del best_depth
+
+        scores = score_composites_numpy(
+            depths, wavelengths, min_depth=min_depth,
+            species_percentile_thresholds=species_pct_thresholds)
 
         ndre_full = _safe_ndre(cube[nir_idx], cube[red_edge_idx])
         veg_blocked = ndre_full < ndre_thresh
@@ -1902,6 +2079,16 @@ def main(options, flags):
         nodata_mask = np.all(np.isnan(cube), axis=0)
         class_map[nodata_mask] = 0
         conf_arr[nodata_mask] = np.nan
+
+        broadband_full = _broadband_reflectance(cube, bright_mask)
+        sand_fallback = (
+            (class_map == 0) & ~nodata_mask & (ndre_full < ndre_thresh)
+            & (broadband_full > sand_albedo_thresh)
+        )
+        class_map[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CLASS_IDX
+        conf_arr[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CONFIDENCE
+        n_sand_fallback += int(sand_fallback.sum())
+
         del cube, depths, scores
 
     class_map = class_map.reshape(nrows, ncols)
@@ -1913,6 +2100,13 @@ def main(options, flags):
             f"NDRE pre-screen (threshold={ndre_thresh}): barred "
             f"{n_ndre_screened} pixel(s) from chlorophyll-dependent classes "
             f"({', '.join(sorted(_CHLOROPHYLL_GATED_RULE_NAMES))})"
+        )
+    if n_sand_fallback:
+        gs.message(
+            f"Quartz/feldspar sand fallback (albedo>{sand_albedo_thresh}): "
+            f"assigned {n_sand_fallback} otherwise-unclassified pixel(s) to "
+            f"'{QUARTZOFELDSPATHIC_SAND_LABEL}' (confidence="
+            f"{QUARTZOFELDSPATHIC_SAND_CONFIDENCE}, elimination-based)"
         )
 
     # Write output rasters
@@ -1965,8 +2159,10 @@ def main(options, flags):
                        units="class code",
                        description=(
                            f"i.hyper.spectroscopy class map. "
-                           f"0=unknown, 1..{len(COMPOSITE_RULES)}=composite rules. "
-                           f"Input: {input_map}"))
+                           f"0=unknown, 1..{len(COMPOSITE_RULES)}=composite rules, "
+                           f"{QUARTZOFELDSPATHIC_SAND_CLASS_IDX}="
+                           f"{QUARTZOFELDSPATHIC_SAND_LABEL} (elimination-based "
+                           f"fallback, not a composite rule). Input: {input_map}"))
 
     if conf_map:
         gs.message(f"Writing confidence map → {conf_map}")
