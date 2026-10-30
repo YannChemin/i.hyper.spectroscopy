@@ -202,6 +202,62 @@ def extract_band(raster3d: str, band_num: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _spectrum_via_r3what(raster3d: str, east: float,
+                         north: float) -> Optional[list[float]]:
+    """Read one pixel's whole depth column with a single r3.what call.
+
+    Returns one value per depth of the cube, indexed by depth, so the caller
+    reads band *n* as ``values[n - 1]``; None if r3.what is unavailable or
+    returns an unexpected number of values, so the caller can fall back to
+    slicing.
+
+    r3.what reads only the voxels asked for, so a full spectrum comes back in
+    well under a second. Slicing the cube into one 2D raster per band to query
+    a single pixel costs minutes on a large cube, because every band pays for
+    the whole scene.
+
+    r3.what reports one value per depth of the computational region, not of
+    the map, so the region's depth window is aligned to the cube's own stack
+    first. That happens inside a temporary region, which leaves the caller's
+    region untouched.
+    """
+    from grass.exceptions import CalledModuleError
+
+    try:
+        depths = int(gs.raster3d_info(raster3d)["depths"])
+    except (CalledModuleError, KeyError, ValueError):
+        return None
+    try:
+        gs.use_temp_region()
+    except (CalledModuleError, OSError):
+        return None
+    try:
+        gs.run_command("g.region", raster_3d=raster3d, quiet=True)
+        out = gs.read_command("r3.what", input=raster3d,
+                              coordinates=f"{east},{north}",
+                              null_value="nan", quiet=True)
+    except CalledModuleError:
+        return None
+    finally:
+        gs.del_temp_region()
+    line = next((ln for ln in out.splitlines() if ln.strip()), "")
+    # east|north|depth 1|depth 2|... in the cube's own depth order.
+    parts = line.split("|")[2:]
+    if len(parts) != depths:
+        gs.verbose(
+            f"r3.what returned {len(parts)} values for a {depths}-depth cube; "
+            "falling back to 2D slice extraction"
+        )
+        return None
+    values = []
+    for v in parts:
+        try:
+            values.append(float(v))
+        except ValueError:
+            values.append(float("nan"))
+    return values
+
+
 def _load_hyper_json_bands(raster3d: str) -> list[dict]:
     """Read wavelength/fwhm/validity from i.hyper.import's JSON sidecar.
 
@@ -682,6 +738,81 @@ SPECTRAL_FEATURES_DB: list[dict] = [
      "mechanism": "CH_combination", "tags": ["synthetic", "plastic", "polymer"],
      "notes": "CH combination; present in many polymers"},
 
+    # Camouflage material. The 1500-1800 nm entries come from USGS
+    # splib07 laboratory fabrics; the 2122/2245 nm pair and the water
+    # exclusion were measured on the C2RD targets themselves.
+    {"center": 1202, "range": (1192, 1222), "species": "coated_fabric_CH_1202",
+     "mechanism": "overtone_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "C-H second overtone of the fabric coating; present in every synthetic sample"},
+    {"center": 1414, "range": (1402, 1428), "species": "coated_fabric_NH_OH_1414",
+     "mechanism": "overtone_NH_OH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "N-H / O-H first overtone; in all 8 synthetic samples, 1411-1419 nm"},
+    {"center": 1535, "range": (1526, 1545), "species": "polyamide_NH_1535",
+     "mechanism": "overtone_NH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "Polyamide N-H first overtone; nylon-specific, absent from cellulose"},
+    {"center": 1573, "range": (1562, 1584), "species": "polyamide_NH_1573",
+     "mechanism": "overtone_NH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "Second polyamide N-H component, always paired with the 1535 nm band"},
+    {"center": 1716, "range": (1700, 1740), "species": "polymer_CH_overtone_1716",
+     "mechanism": "overtone_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "C-H first overtone, the strongest synthetic-fabric band (depth 0.16-0.49)"},
+    {"center": 1757, "range": (1742, 1772), "species": "polymer_CH_overtone_1755",
+     "mechanism": "overtone_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "C-H first overtone partner; the 1716+1755 doublet is the branch's anchor"},
+    {"center": 2049, "range": (2036, 2064), "species": "polyamide_amide_2049",
+     "mechanism": "combination_amide",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "Amide combination band of polyamide fabrics; depth up to 0.36"},
+    {"center": 2183, "range": (2170, 2198), "species": "polymer_CH_2183",
+     "mechanism": "combination_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "C-H combination of coated polyamide fabric"},
+    {"center": 2294, "range": (2282, 2308), "species": "polymer_CH_2294",
+     "mechanism": "combination_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "C-H combination; deepest SWIR band of the coated fabrics"},
+    {"center": 2122, "range": (2105, 2140), "species": "polymer_sheet_2122",
+     "mechanism": "combination_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "Field-measured band of the C2RD polymer sheeting"},
+    {"center": 2245, "range": (2228, 2262), "species": "polymer_sheet_2245",
+     "mechanism": "combination_CH",
+     "tags": ["synthetic", "polymer", "fabric", "camouflage"],
+     "notes": "Field-measured partner band; with 2122 nm it gives 11/12 recall"},
+    # Open-water exclusion. Used only to veto synthetic-material rules, never
+    # as a positive match, so every band carries its own min_depth: the OH
+    # overtones differ in strength by a factor of two and a single species-
+    # level threshold cannot serve all four. The 970 and 1200 nm floors are
+    # measured on the C2RD Pourrieres scene (pool and pond water reach
+    # 0.80-0.89 and 0.75-0.78; the deepest non-water surface in that scene,
+    # a black polymer sheet, reaches 0.35 and 0.19). The 1450 nm band is
+    # deliberately set out of reach: leaf water alone reaches 0.54 there, so
+    # it cannot separate water from vegetation. The 1940 nm floor is carried
+    # over from the laboratory branch and is not validated on field data,
+    # because no sensor used here samples that window.
+    {"center": 970, "range": (950, 990), "species": "water_body_OH_exclusion",
+     "mechanism": "2nd_overtone_OH_stretch", "min_depth": 0.60,
+     "tags": ["water", "exclusion"],
+     "notes": "Open water 0.80-0.89 in the C2RD scene; deepest non-water surface 0.35"},
+    {"center": 1200, "range": (1180, 1220), "species": "water_body_OH_exclusion",
+     "mechanism": "combination_bend+stretch", "min_depth": 0.55,
+     "tags": ["water", "exclusion"],
+     "notes": "Open water 0.75-0.78 in the C2RD scene; deepest non-water surface 0.31"},
+    {"center": 1450, "range": (1400, 1500), "species": "water_body_OH_exclusion",
+     "mechanism": "1st_overtone_OH_stretch", "min_depth": 0.80,
+     "tags": ["water", "exclusion"],
+     "notes": "Inert by design: leaf water reaches 0.54 here, so 1450 nm cannot veto on its own"},
+    {"center": 1940, "range": (1900, 1980), "species": "water_body_OH_exclusion",
+     "mechanism": "combination_OH", "min_depth": 0.50,
+     "tags": ["water", "exclusion"],
+     "notes": "Laboratory value, not validated on field data: no sensor used here samples 1900-1980 nm"},
+
     # Quartz / silicates
     {"center": 1380, "range": (1360, 1400), "species": "Si-OH_quartz",
      "mechanism": "OH_combination", "tags": ["mineral", "geological", "silicate"],
@@ -1045,6 +1176,50 @@ SPECTRAL_FEATURES_DB: list[dict] = [
 # ---------------------------------------------------------------------------
 
 COMPOSITE_RULES: list[dict] = [
+
+    # ── CAMOUFLAGE ────────────────────────────────────────────────────────
+    {"name": "camouflage_fabric_cut_sheet", "category": "synthetic",
+     "required_species": ["polymer_CH_overtone_1716", "polymer_CH_overtone_1755"],
+     "min_depth_overrides": {"polymer_CH_overtone_1716": 0.12, "polymer_CH_overtone_1755": 0.1, "polyamide_NH_1535": 0.05, "polyamide_amide_2049": 0.05},
+     "required_absent": ["water_body_OH_exclusion"],
+     "bonus_species": ["coated_fabric_CH_1202", "coated_fabric_NH_OH_1414", "polymer_CH_2294"],
+     "base_score": 0.78,
+     "notes": "Die-cut sheet camouflage garnish: one coated fabric punched with leaf-shaped voids, not knotted netting"},
+    {"name": "camouflage_fabric_polyamide", "category": "synthetic",
+     "required_species": ["polymer_CH_overtone_1716", "polyamide_NH_1535", "polyamide_amide_2049"],
+     "min_depth_overrides": {"polymer_CH_overtone_1716": 0.12, "polymer_CH_overtone_1755": 0.1, "polyamide_NH_1535": 0.05, "polyamide_amide_2049": 0.05},
+     "required_absent": ["water_body_OH_exclusion"],
+     "bonus_species": ["polyamide_NH_1573", "polymer_CH_2183", "polymer_CH_overtone_1755"],
+     "base_score": 0.82,
+     "notes": "Polyamide (nylon) camouflage fabric or webbing; amide bands separate it from polyolefin sheeting"},
+    {"name": "camouflage_fabric_coated_polyolefin", "category": "synthetic",
+     "required_species": ["polymer_CH_overtone_1716", "polymer_CH", "CH_aliphatic"],
+     "min_depth_overrides": {"polymer_CH_overtone_1716": 0.12, "polymer_CH_overtone_1755": 0.1, "polyamide_NH_1535": 0.05, "polyamide_amide_2049": 0.05},
+     "required_absent": ["water_body_OH_exclusion"],
+     "bonus_species": ["coated_fabric_CH_1202", "coated_fabric_NH_OH_1414", "polymer_CH_overtone_1755"],
+     "base_score": 0.8,
+     "notes": "PVC- or polyolefin-coated woven camouflage sheet; very deep 2310/2350 nm bands, no amide"},
+    {"name": "camouflage_garnish_over_vegetation", "category": "synthetic",
+     "required_species": ["polymer_CH_overtone_1716", "chlorophyll_a+b"],
+     "min_depth_overrides": {"polymer_CH_overtone_1716": 0.12, "polymer_CH_overtone_1755": 0.1, "polyamide_NH_1535": 0.05, "polyamide_amide_2049": 0.05},
+     "required_absent": ["water_body_OH_exclusion"],
+     "bonus_species": ["polyamide_NH_1535", "red_edge_inflection", "polymer_CH_overtone_1755"],
+     "base_score": 0.62,
+     "notes": "Cut-sheet garnish laid over vegetation: fabric C-H bands mixed with chlorophyll seen through the voids. The intended operational signature"},
+    {"name": "camouflage_polymer_sheet_field", "category": "synthetic",
+     "required_species": ["polymer_sheet_2122", "polymer_sheet_2245"],
+     "min_depth_overrides": {"polymer_sheet_2122": 0.12, "polymer_sheet_2245": 0.1},
+     "required_absent": ["water_body_OH_exclusion"],
+     "bonus_species": ["polymer_CH_overtone_1716", "polymer_CH_2183"],
+     "base_score": 0.75,
+     "notes": "Polymer sheeting, derived from the C2RD Pourrieres targets themselves. Detects 11 of 12 sheets; the other hits are a bin liner, a transparent bag and a windsock, which are also polymer. Open water is excluded by its own deep 1940 nm band"},
+    {"name": "natural_fibre_fabric", "category": "organic",
+     "required_species": ["cellulose_OH", "cellulose"],
+     "required_absent": ["polymer_CH_overtone_1716"],
+     "bonus_species": ["lignin"],
+     "base_score": 0.7,
+     "notes": "Cotton, hessian or canvas. Separated from synthetic camouflage by the absence of the 1716 nm C-H overtone"},
+
     {"name": "green_vegetation",       "category": "biologic",
      "required_species": ["chlorophyll_a+b", "red_edge_inflection"],
      "bonus_species": ["carotenoids", "liquid_water_OH"], "base_score": 0.90,
@@ -1398,6 +1573,7 @@ def interpret_spectrum(
     min_band_depth: float = 0.02,
     ndre: Optional[float] = None,
     ndre_threshold: float = 0.15,
+    wavelengths: Optional[np.ndarray] = None,
 ) -> SpectralInterpretation:
     """Interpret a reflectance spectrum from absorption feature triplets.
 
@@ -1487,7 +1663,15 @@ def interpret_spectrum(
     detected = set(species_map.keys())
     hypotheses: list[MaterialHypothesis] = []
 
+    # Rules the sensor cannot decide are dropped here too, for the same
+    # reason as in the full-map path: an untestable exclusion would pass.
+    unsupported = unsupported_rules(wavelengths) if wavelengths is not None else {}
+    for name, reason in sorted(unsupported.items()):
+        flags.append(f"Rule {name} disabled: {reason}")
+
     for rule in COMPOSITE_RULES:
+        if rule["name"] in unsupported:
+            continue
         if ndre_blocks_chlorophyll and rule["name"] in _CHLOROPHYLL_GATED_RULE_NAMES:
             continue
         req = rule["required_species"]
@@ -1495,12 +1679,25 @@ def interpret_spectrum(
         req_counts: dict[str, int] = {}
         for sp in req:
             req_counts[sp] = req_counts.get(sp, 0) + 1
+        def _threshold(sp: str, entry: dict, overrides: dict = overrides) -> float:
+            """Deeper of the rule's override and the DB entry's own floor."""
+            return max(overrides.get(sp, min_band_depth),
+                       float(entry.get("min_depth", 0.0)))
+
         if not all(
-            sum(1 for fe in species_map.get(sp, []) if fe[0].depth >= overrides.get(sp, min_band_depth)) >= cnt
+            sum(1 for fe in species_map.get(sp, [])
+                if fe[0].depth >= _threshold(sp, fe[1])) >= cnt
             for sp, cnt in req_counts.items()
         ):
             continue
-        if any(sp in detected for sp in rule.get("required_absent", [])):
+        # Match the full-map path: an absent species honours its own depth
+        # override, so a rule can require "no deep water band" rather than
+        # "no water band at all".
+        if any(
+            any(fe[0].depth >= _threshold(sp, fe[1])
+                for fe in species_map.get(sp, []))
+            for sp in rule.get("required_absent", [])
+        ):
             continue
 
         bonus_hit = sum(1 for sp in rule.get("bonus_species", []) if sp in detected)
@@ -1618,9 +1815,10 @@ def _accumulate_species_best_depth(depths_chunk: np.ndarray,
     depth within each required species' band set (NaN where that species has
     no bands in this cube)."""
     for sp, arr in best_depth.items():
-        band_idxs = sp_index.get(sp, [])
-        if not band_idxs:
+        bands = sp_index.get(sp, [])
+        if not bands:
             continue
+        band_idxs = [i for i, _floor in bands]
         # All-NaN columns (true no-data pixels) are expected and yield NaN
         # here, same benign case as _compute_depths_numpy's nanmax guard.
         with np.errstate(invalid='ignore'), warnings.catch_warnings():
@@ -1644,17 +1842,94 @@ def _species_percentile_thresholds(best_depth: dict[str, np.ndarray],
     return thresholds
 
 
-def _build_band_species_index(wavelengths: np.ndarray) -> dict[str, list[int]]:
-    """For each DB species, list of band indices that fall within its range."""
-    idx: dict[str, list[int]] = {}
+def _build_band_species_index(
+        wavelengths: np.ndarray) -> dict[str, list[tuple[int, float]]]:
+    """For each DB species, the band indices in its range and their floors.
+
+    A DB entry may carry its own ``min_depth``, which applies to the bands of
+    that entry alone. A species whose bands differ in strength (the water OH
+    overtones, for instance) needs this: one species-level threshold would be
+    either too strict for the weak bands or too loose for the strong ones.
+    Entries without ``min_depth`` contribute a floor of 0.0, so the rule's
+    own override and the global minimum decide, exactly as before.
+    """
+    idx: dict[str, list[tuple[int, float]]] = {}
     for entry in SPECTRAL_FEATURES_DB:
         sp = entry["species"]
         lo, hi = entry["range"]
-        hits = [i for i, wl in enumerate(wavelengths) if lo <= wl <= hi]
+        floor = float(entry.get("min_depth", 0.0))
+        hits = [(i, floor) for i, wl in enumerate(wavelengths) if lo <= wl <= hi]
         if hits:
             idx.setdefault(sp, []).extend(hits)
-    # Deduplicate
-    return {sp: sorted(set(v)) for sp, v in idx.items()}
+    # One entry per band, keeping the deepest floor where entries overlap.
+    out: dict[str, list[tuple[int, float]]] = {}
+    for sp, hits in idx.items():
+        best: dict[int, float] = {}
+        for i, floor in hits:
+            best[i] = max(best.get(i, 0.0), floor)
+        out[sp] = sorted(best.items())
+    return out
+
+
+# A band window is only "sampled" by a sensor when a band falls near its
+# nominal centre, not merely somewhere inside the window. Without this test a
+# sensor whose bands stop at 1482 nm counts as covering the 1400-1500 nm water
+# window, and the engine then reads a band depth off the edge of a spectral
+# gap -- which is how the 1940 nm water veto came to be evaluated on a cube
+# that has no bands between 1784 and 1984 nm.
+def _entry_is_sampled(wavelengths: np.ndarray, entry: dict) -> bool:
+    lo, hi = entry["range"]
+    tol = max(15.0, 0.4 * (hi - lo) / 2.0)
+    centre = float(entry["center"])
+    return bool(np.any(np.abs(wavelengths - centre) <= tol))
+
+
+def _species_sampled(wavelengths: np.ndarray) -> dict[str, bool]:
+    """Whether the sensor samples at least one band of each DB species."""
+    sampled: dict[str, bool] = {}
+    for entry in SPECTRAL_FEATURES_DB:
+        sp = entry["species"]
+        sampled[sp] = sampled.get(sp, False) or _entry_is_sampled(wavelengths, entry)
+    return sampled
+
+
+def unsupported_rules(wavelengths: np.ndarray) -> dict[str, str]:
+    """Rules this sensor cannot decide, with the reason for each.
+
+    A rule is unsupported when the sensor samples none of the bands of one of
+    its required species, or none of the bands of one of its required-absent
+    species. The second case is the dangerous one: an exclusion that cannot
+    be tested would otherwise pass everywhere, turning a veto into a no-op
+    and letting the rule fire on exactly the material it was meant to reject.
+    Such a rule is disabled rather than silently relaxed. Bonus species are
+    optional and never disable a rule.
+    """
+    sampled = _species_sampled(wavelengths)
+    out: dict[str, str] = {}
+    for rule in COMPOSITE_RULES:
+        for sp in rule["required_species"]:
+            if not sampled.get(sp, False):
+                out[rule["name"]] = (
+                    f"required species <{sp}> is outside this sensor's bands"
+                )
+                break
+        else:
+            for sp in rule.get("required_absent", []):
+                if not sampled.get(sp, False):
+                    out[rule["name"]] = (
+                        f"exclusion species <{sp}> is outside this sensor's "
+                        "bands, so the rule cannot be vetoed"
+                    )
+                    break
+    return out
+
+
+def warn_unsupported_rules(wavelengths: np.ndarray) -> dict[str, str]:
+    """Report the unsupported rules to the user and return them."""
+    unsupported = unsupported_rules(wavelengths)
+    for name, reason in sorted(unsupported.items()):
+        gs.warning(f"Rule <{name}> is disabled for this sensor: {reason}.")
+    return unsupported
 
 
 def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
@@ -1684,6 +1959,7 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
     """
     n_pixels = depths.shape[1]
     sp_index = _build_band_species_index(wavelengths)
+    unsupported = unsupported_rules(wavelengths)
     n_rules = len(COMPOSITE_RULES)
     scores = np.zeros((n_rules, n_pixels), dtype=np.float32)
     pct_thresholds = species_percentile_thresholds or {}
@@ -1692,19 +1968,30 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
         return max(overrides.get(sp, min_depth), pct_thresholds.get(sp, 0.0))
 
     # Pre-compute detection map: species → bool array (n_pixels,)
+    def _hits(sp: str, threshold: float) -> np.ndarray:
+        """Per-band detection, each band against the deeper of the two floors."""
+        bands = sp_index.get(sp, [])
+        if not bands:
+            return np.zeros((0, n_pixels), dtype=bool)
+        return np.stack([
+            depths[i] >= max(threshold, floor) for i, floor in bands
+        ])
+
     def _species_detected(sp: str, threshold: float) -> np.ndarray:
-        band_idxs = sp_index.get(sp, [])
-        if not band_idxs:
+        hits = _hits(sp, threshold)
+        if not hits.size:
             return np.zeros(n_pixels, dtype=bool)
-        return np.any(depths[band_idxs] >= threshold, axis=0)
+        return np.any(hits, axis=0)
 
     def _species_n_detections(sp: str, threshold: float) -> np.ndarray:
-        band_idxs = sp_index.get(sp, [])
-        if not band_idxs:
+        hits = _hits(sp, threshold)
+        if not hits.size:
             return np.zeros(n_pixels, dtype=np.int32)
-        return np.sum(depths[band_idxs] >= threshold, axis=0).astype(np.int32)
+        return np.sum(hits, axis=0).astype(np.int32)
 
     for r_idx, rule in enumerate(COMPOSITE_RULES):
+        if rule["name"] in unsupported:
+            continue
         req = rule["required_species"]
         # Some rules need a stricter depth than the global default for a
         # specific species, when its generic detection window coincidentally
@@ -1841,18 +2128,27 @@ def main(options, flags):
             gs.fatal("coordinates must be 'east,north' (two floats)")
 
         gs.message(f"Extracting spectrum at E={east} N={north}")
-        gs.verbose("Loading all bands via fast Z-slice extraction…")
+        column = _spectrum_via_r3what(input_map, east, north)
+        if column is not None:
+            refl_values = [column[b['band'] - 1] for b in bands]
+        else:
+            gs.verbose("Falling back to per-band 2D slice extraction…")
+            refl_values = []
+            for z_idx, b in enumerate(bands):
+                gs.percent(z_idx, len(bands), 2)
+                tmp = extract_band(input_map, b['band'])
+                val_str = gs.read_command(
+                    'r.what', map=tmp, coordinates=f"{east},{north}", quiet=True
+                ).split('|')[-1].strip()
+                try:
+                    refl_values.append(float(val_str))
+                except ValueError:
+                    refl_values.append(float('nan'))
+            gs.percent(len(bands), len(bands), 2)
+
         spectrum: list[tuple[float, float, float]] = []
         band_refl: dict[int, float] = {}
-        for z_idx, b in enumerate(bands):
-            tmp = extract_band(input_map, b['band'])
-            val_str = gs.read_command(
-                'r.what', map=tmp, coordinates=f"{east},{north}", quiet=True
-            ).split('|')[-1].strip()
-            try:
-                refl = float(val_str)
-            except ValueError:
-                refl = float('nan')
+        for z_idx, (b, refl) in enumerate(zip(bands, refl_values)):
             spectrum.append((b['wavelength'], b['fwhm'], refl))
             band_refl[z_idx] = refl
 
@@ -1865,8 +2161,10 @@ def main(options, flags):
         if not spectrum:
             gs.fatal("All band values are nodata at the specified coordinates.")
 
-        result = interpret_spectrum(spectrum, min_band_depth=min_depth,
-                                    ndre=ndre, ndre_threshold=ndre_thresh)
+        result = interpret_spectrum(
+            spectrum, min_band_depth=min_depth, ndre=ndre,
+            ndre_threshold=ndre_thresh,
+            wavelengths=np.array([c for c, _fw, _r in spectrum]))
         print_interpretation(result, verbose=verbose)
         return 0
 
@@ -1909,6 +2207,8 @@ def main(options, flags):
     # memory stays roughly constant regardless of scene size, instead of ever
     # materializing a full (bands, pixels) cube plus a same-size depths array
     # simultaneously (which for a full EMIT scene can require tens of GB).
+    warn_unsupported_rules(wavelengths)
+
     gs.message("Computing band depths and scoring composites (tiled)…")
     TARGET_CHUNK_PIXELS = 300_000
     chunk_rows = max(1, TARGET_CHUNK_PIXELS // ncols)

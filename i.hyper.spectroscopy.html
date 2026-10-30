@@ -179,6 +179,42 @@ When no neighbour exists, continuum = 1.0.  Bands with
   <tr><td>&gt; 0.30</td><td>Strong; nearly pure mineral or dense canopy</td></tr>
 </table>
 
+<h3>Sensor band coverage</h3>
+
+<p>Before scoring, the module checks which of its composite rules this sensor
+can actually decide, and reports the rest as warnings:</p>
+
+<pre>
+WARNING: Rule &lt;kaolinite&gt; is disabled for this sensor: required species
+         &lt;Al-OH_clay&gt; is outside this sensor's bands.
+</pre>
+
+<p>A rule is disabled when the sensor samples none of the bands of one of its
+required species, or none of the bands of one of its <b>required-absent</b>
+species. The second case matters more than it looks: an exclusion that cannot
+be tested would otherwise pass everywhere, turning a veto into a no-op and
+letting the rule fire on exactly the material it was written to reject. Such a
+rule is dropped rather than silently relaxed.</p>
+
+<p>A band window counts as sampled only when a band falls near its nominal
+centre, not merely somewhere inside the window. Without that test a sensor
+whose bands stop at 1482 nm would count as covering the 1400-1500 nm water
+window, and the engine would read a band depth off the edge of a spectral gap.
+Cubes that drop the water-vapour windows &mdash; most airborne and drone
+products do &mdash; are the normal case, not an exception.</p>
+
+<h3>Per-band detection thresholds</h3>
+
+<p>A species' bands can differ in strength by a factor of two or more, so a
+single species-level threshold serves none of them well. A database entry may
+therefore carry its own <tt>min_depth</tt>, which applies to that entry's
+bands alone; the effective threshold for a band is the deepest of its own
+floor, the rule's <tt>min_depth_overrides</tt> entry and the global
+<b>min_band_depth</b>. The open-water exclusion uses this: it vetoes on a
+depth of 0.60 at 970 nm, 0.55 at 1200 nm and 0.50 at 1940 nm, and is
+deliberately out of reach at 1450 nm, where leaf water alone reaches 0.54 and
+so cannot separate water from vegetation.</p>
+
 <h3>Composite scoring</h3>
 
 <p>Each composite rule defines a <code>base_score</code> (0–1) and lists of
@@ -339,17 +375,18 @@ r.mapcalc expression="argillic_confirmed = \
 
 <h2>SEE ALSO</h2>
 
-<a href="i.hyper.import.html">i.hyper.import</a>,
-<a href="i.hyper.geology.html">i.hyper.geology</a>,
-<a href="i.hyper.continuum.html">i.hyper.continuum</a>,
-<a href="i.hyper.indices.html">i.hyper.indices</a>,
 <a href="i.hyper.atcorr.html">i.hyper.atcorr</a>,
+<a href="i.hyper.continuum.html">i.hyper.continuum</a>,
+<a href="i.hyper.geology.html">i.hyper.geology</a>,
+<a href="i.hyper.import.html">i.hyper.import</a>,
+<a href="i.hyper.indices.html">i.hyper.indices</a>,
 <a href="i.hyper.smac.html">i.hyper.smac</a>,
-<a href="https://grass.osgeo.org/grass-stable/manuals/r.mapcalc.html">r.mapcalc</a>,
 <a href="https://grass.osgeo.org/grass-stable/manuals/r.category.html">r.category</a>,
 <a href="https://grass.osgeo.org/grass-stable/manuals/r.colors.html">r.colors</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.mapcalc.html">r.mapcalc</a>,
 <a href="https://grass.osgeo.org/grass-stable/manuals/r.univar.html">r.univar</a>,
-<a href="https://grass.osgeo.org/grass-stable/manuals/r3.info.html">r3.info</a>
+<a href="https://grass.osgeo.org/grass-stable/manuals/r3.info.html">r3.info</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r3.what.html">r3.what</a>
 
 <h2>REFERENCES</h2>
 

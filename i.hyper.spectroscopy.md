@@ -164,6 +164,42 @@ Typical thresholds:
 | 0.10–0.30 | Moderate; most composite rules activate here |
 | > 0.30 | Strong; nearly pure mineral or dense canopy |
 
+### Sensor band coverage
+
+Before scoring, the module checks which of its composite rules this sensor can
+actually decide, and reports the rest as warnings:
+
+```
+WARNING: Rule <kaolinite> is disabled for this sensor: required species
+         <Al-OH_clay> is outside this sensor's bands.
+```
+
+A rule is disabled when the sensor samples none of the bands of one of its
+required species, or none of the bands of one of its **required-absent**
+species.  The second case matters more than it looks: an exclusion that cannot
+be tested would otherwise pass everywhere, turning a veto into a no-op and
+letting the rule fire on exactly the material it was written to reject.  Such
+a rule is dropped rather than silently relaxed.
+
+A band window counts as sampled only when a band falls near its nominal
+centre, not merely somewhere inside the window.  Without that test a sensor
+whose bands stop at 1482 nm would count as covering the 1400–1500 nm water
+window, and the engine would read a band depth off the edge of a spectral
+gap.  Cubes that drop the water-vapour windows — most airborne and drone
+products do — are the normal case, not an exception.
+
+### Per-band detection thresholds
+
+A species' bands can differ in strength by a factor of two or more, so a
+single species-level threshold serves none of them well.  A database entry may
+therefore carry its own `min_depth`, which applies to that entry's bands
+alone; the effective threshold for a band is the deepest of its own floor, the
+rule's `min_depth_overrides` entry and the global **min_band_depth**.  The
+open-water exclusion uses this: it vetoes on a depth of 0.60 at 970 nm, 0.55
+at 1200 nm and 0.50 at 1940 nm, and is deliberately out of reach at 1450 nm,
+where leaf water alone reaches 0.54 and so cannot separate water from
+vegetation.
+
 ### Composite scoring
 
 Each composite rule defines a `base_score` (0–1) and a list of required
@@ -370,17 +406,18 @@ crocidolite, acid mine drainage, talc, phycoerythrin).
 
 ## SEE ALSO
 
-[i.hyper.import](i.hyper.import.html),
-[i.hyper.geology](i.hyper.geology.html),
-[i.hyper.continuum](i.hyper.continuum.html),
-[i.hyper.indices](i.hyper.indices.html),
 [i.hyper.atcorr](i.hyper.atcorr.html),
+[i.hyper.continuum](i.hyper.continuum.html),
+[i.hyper.geology](i.hyper.geology.html),
+[i.hyper.import](i.hyper.import.html),
+[i.hyper.indices](i.hyper.indices.html),
 [i.hyper.smac](i.hyper.smac.html),
-[r.mapcalc](https://grass.osgeo.org/grass-stable/manuals/r.mapcalc.html),
 [r.category](https://grass.osgeo.org/grass-stable/manuals/r.category.html),
 [r.colors](https://grass.osgeo.org/grass-stable/manuals/r.colors.html),
+[r.mapcalc](https://grass.osgeo.org/grass-stable/manuals/r.mapcalc.html),
 [r.univar](https://grass.osgeo.org/grass-stable/manuals/r.univar.html),
-[r3.info](https://grass.osgeo.org/grass-stable/manuals/r3.info.html)
+[r3.info](https://grass.osgeo.org/grass-stable/manuals/r3.info.html),
+[r3.what](https://grass.osgeo.org/grass-stable/manuals/r3.what.html)
 
 ## REFERENCES
 

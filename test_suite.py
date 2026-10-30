@@ -33,6 +33,9 @@ SPECTRAL_FEATURES_DB = _mod.SPECTRAL_FEATURES_DB
 COMPOSITE_RULES      = _mod.COMPOSITE_RULES
 CLASS_LABELS         = _mod.CLASS_LABELS
 AbsorptionFeature    = _mod.AbsorptionFeature
+_entry_is_sampled    = _mod._entry_is_sampled
+_species_sampled     = _mod._species_sampled
+unsupported_rules    = _mod.unsupported_rules
 
 
 # ===========================================================================
@@ -369,15 +372,16 @@ class TestBuildBandSpeciesIndex:
         wl = np.array([430., 680., 1000.])
         idx = _build_band_species_index(wl)
         assert "chlorophyll_a+b" in idx
-        assert 0 in idx["chlorophyll_a+b"]  # 430nm → index 0
-        assert 1 in idx["chlorophyll_a+b"]  # 680nm → index 1
-        assert 2 not in idx["chlorophyll_a+b"]  # 1000nm out of range
+        bands = [i for i, _floor in idx["chlorophyll_a+b"]]
+        assert 0 in bands  # 430nm → index 0
+        assert 1 in bands  # 680nm → index 1
+        assert 2 not in bands  # 1000nm out of range
 
     def test_red_edge_inflection_found(self):
         wl = np.array([710.])  # range (700, 730)
         idx = _build_band_species_index(wl)
         assert "red_edge_inflection" in idx
-        assert 0 in idx["red_edge_inflection"]
+        assert 0 in [i for i, _floor in idx["red_edge_inflection"]]
 
     def test_no_match_outside_all_ranges(self):
         wl = np.array([350., 2600.])  # outside all DB ranges
@@ -668,3 +672,80 @@ class TestNewMaterialClasses:
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# ===========================================================================
+# 9. Sensor band coverage and the water exclusion
+# ===========================================================================
+
+# Band centres of the C2RD Pourrieres HySpex mosaic, which drops both
+# water-vapour windows: no bands in 1329-1483 nm nor in 1784-1984 nm.
+_C2RD_WL = np.concatenate([
+    np.arange(411.4, 1329.1, 5.1),
+    np.arange(1482.6, 1784.6, 5.1),
+    np.arange(1984.0, 2449.7, 5.1),
+])
+
+
+class TestEntryIsSampled:
+    def test_band_at_centre_is_sampled(self):
+        entry = {"center": 970, "range": (950, 990)}
+        assert _entry_is_sampled(np.array([970.8]), entry)
+
+    def test_band_only_at_window_edge_is_not_sampled(self):
+        # 1482.6 nm sits inside the 1400-1500 nm window but 32 nm from its
+        # centre: reading a depth there means reading off a spectral gap.
+        entry = {"center": 1450, "range": (1400, 1500)}
+        assert not _entry_is_sampled(np.array([1482.6]), entry)
+
+    def test_c2rd_mosaic_misses_1450_and_1940(self):
+        sampled = [
+            e["center"] for e in SPECTRAL_FEATURES_DB
+            if e["species"] == "water_body_OH_exclusion"
+            and _entry_is_sampled(_C2RD_WL, e)
+        ]
+        assert sampled == [970, 1200]
+
+
+class TestWaterExclusion:
+    def test_species_has_per_band_floors(self):
+        floors = {
+            e["center"]: e["min_depth"] for e in SPECTRAL_FEATURES_DB
+            if e["species"] == "water_body_OH_exclusion"
+        }
+        # The weak 970 nm overtone cannot share a threshold with 1940 nm.
+        assert floors[970] != floors[1940]
+        assert all(0.0 < v <= 1.0 for v in floors.values())
+
+    def test_index_carries_the_floor_of_each_band(self):
+        idx = _build_band_species_index(_C2RD_WL)
+        bands = dict(idx["water_body_OH_exclusion"])
+        floors = {round(float(_C2RD_WL[i])): f for i, f in bands.items()}
+        assert set(floors.values()) <= {0.60, 0.55, 0.80}
+
+    def test_every_camouflage_rule_vetoes_water(self):
+        for rule in COMPOSITE_RULES:
+            if rule["name"].startswith("camouflage"):
+                assert "water_body_OH_exclusion" in rule["required_absent"], (
+                    f"{rule['name']} has no water veto"
+                )
+
+
+class TestUnsupportedRules:
+    def test_rule_is_disabled_when_its_exclusion_cannot_be_tested(self):
+        # A sensor covering the polymer bands but no water band at all: the
+        # veto is untestable, so the rule must be dropped, not relaxed.
+        wl = np.array([2122.0, 2245.0])
+        assert "camouflage_polymer_sheet_field" in unsupported_rules(wl)
+
+    def test_rule_survives_when_one_water_band_is_sampled(self):
+        wl = np.array([970.0, 2122.0, 2245.0])
+        assert "camouflage_polymer_sheet_field" not in unsupported_rules(wl)
+
+    def test_c2rd_mosaic_keeps_the_field_sheet_rule(self):
+        assert "camouflage_polymer_sheet_field" not in unsupported_rules(_C2RD_WL)
+
+    def test_reason_names_the_missing_species(self):
+        wl = np.array([2122.0, 2245.0])
+        reason = unsupported_rules(wl)["camouflage_polymer_sheet_field"]
+        assert "water_body_OH_exclusion" in reason

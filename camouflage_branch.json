@@ -1,0 +1,1065 @@
+{
+  "meta": {
+    "description": "Camouflage branch of the spectral taxonomy, derived from USGS splib07 coated-fabric and tarpaulin spectra.",
+    "source_library": "USGS splib07a, ChapterA_ArtificialMaterials",
+    "wavelength_range_nm": "400-2500",
+    "campaign": "C2RD Pourrieres, 13 October 2026",
+    "material_note": "The campaign samples are die-cut sheet garnish, not knotted netting: a single coated fabric with leaf-shaped voids."
+  },
+  "measurement": {
+    "per_sample": {
+      "nylon_webbing_olive_drab": {
+        "group": "synthetic",
+        "albedo_500_900": 0.3215073703865337,
+        "features": [
+          {
+            "nm": 923.0,
+            "depth": 0.048
+          },
+          {
+            "nm": 1039.0,
+            "depth": 0.046
+          },
+          {
+            "nm": 1202.0,
+            "depth": 0.214
+          },
+          {
+            "nm": 1419.0,
+            "depth": 0.173
+          },
+          {
+            "nm": 1478.0,
+            "depth": 0.154
+          },
+          {
+            "nm": 1536.0,
+            "depth": 0.175
+          },
+          {
+            "nm": 1573.0,
+            "depth": 0.114
+          },
+          {
+            "nm": 1601.0,
+            "depth": 0.101
+          },
+          {
+            "nm": 1717.0,
+            "depth": 0.354
+          },
+          {
+            "nm": 1752.0,
+            "depth": 0.34
+          },
+          {
+            "nm": 1947.0,
+            "depth": 0.204
+          },
+          {
+            "nm": 2011.0,
+            "depth": 0.21
+          },
+          {
+            "nm": 2050.0,
+            "depth": 0.362
+          },
+          {
+            "nm": 2183.0,
+            "depth": 0.312
+          },
+          {
+            "nm": 2294.0,
+            "depth": 0.448
+          },
+          {
+            "nm": 2352.0,
+            "depth": 0.396
+          }
+        ]
+      },
+      "nylon_fabric_green": {
+        "group": "synthetic",
+        "albedo_500_900": 0.3453905677182045,
+        "features": [
+          {
+            "nm": 1202.0,
+            "depth": 0.049
+          },
+          {
+            "nm": 1411.0,
+            "depth": 0.034
+          },
+          {
+            "nm": 1536.0,
+            "depth": 0.061
+          },
+          {
+            "nm": 1573.0,
+            "depth": 0.034
+          },
+          {
+            "nm": 1716.0,
+            "depth": 0.164
+          },
+          {
+            "nm": 1751.0,
+            "depth": 0.149
+          },
+          {
+            "nm": 1951.0,
+            "depth": 0.07
+          },
+          {
+            "nm": 2050.0,
+            "depth": 0.23
+          },
+          {
+            "nm": 2183.0,
+            "depth": 0.192
+          },
+          {
+            "nm": 2294.0,
+            "depth": 0.353
+          },
+          {
+            "nm": 2348.0,
+            "depth": 0.284
+          }
+        ]
+      },
+      "nylon_fabric_blue": {
+        "group": "synthetic",
+        "albedo_500_900": 0.3614008863915212,
+        "features": [
+          {
+            "nm": 1202.0,
+            "depth": 0.048
+          },
+          {
+            "nm": 1411.0,
+            "depth": 0.031
+          },
+          {
+            "nm": 1535.0,
+            "depth": 0.062
+          },
+          {
+            "nm": 1573.0,
+            "depth": 0.034
+          },
+          {
+            "nm": 1716.0,
+            "depth": 0.166
+          },
+          {
+            "nm": 1751.0,
+            "depth": 0.151
+          },
+          {
+            "nm": 1950.0,
+            "depth": 0.061
+          },
+          {
+            "nm": 2049.0,
+            "depth": 0.237
+          },
+          {
+            "nm": 2183.0,
+            "depth": 0.194
+          },
+          {
+            "nm": 2294.0,
+            "depth": 0.351
+          },
+          {
+            "nm": 2347.0,
+            "depth": 0.283
+          }
+        ]
+      },
+      "nylon_fabric_red": {
+        "group": "synthetic",
+        "albedo_500_900": 0.3853606874663341,
+        "features": [
+          {
+            "nm": 1202.0,
+            "depth": 0.058
+          },
+          {
+            "nm": 1411.0,
+            "depth": 0.035
+          },
+          {
+            "nm": 1482.0,
+            "depth": 0.031
+          },
+          {
+            "nm": 1535.0,
+            "depth": 0.067
+          },
+          {
+            "nm": 1573.0,
+            "depth": 0.037
+          },
+          {
+            "nm": 1602.0,
+            "depth": 0.031
+          },
+          {
+            "nm": 1716.0,
+            "depth": 0.177
+          },
+          {
+            "nm": 1751.0,
+            "depth": 0.161
+          },
+          {
+            "nm": 1948.0,
+            "depth": 0.066
+          },
+          {
+            "nm": 2050.0,
+            "depth": 0.245
+          },
+          {
+            "nm": 2183.0,
+            "depth": 0.204
+          },
+          {
+            "nm": 2294.0,
+            "depth": 0.376
+          },
+          {
+            "nm": 2348.0,
+            "depth": 0.302
+          }
+        ]
+      },
+      "nylon_fabric_black_coated": {
+        "group": "synthetic",
+        "albedo_500_900": 0.24062803037406483,
+        "features": [
+          {
+            "nm": 916.0,
+            "depth": 0.169
+          },
+          {
+            "nm": 1046.0,
+            "depth": 0.316
+          },
+          {
+            "nm": 1199.0,
+            "depth": 0.087
+          },
+          {
+            "nm": 1413.0,
+            "depth": 0.061
+          },
+          {
+            "nm": 1480.0,
+            "depth": 0.05
+          },
+          {
+            "nm": 1535.0,
+            "depth": 0.076
+          },
+          {
+            "nm": 1573.0,
+            "depth": 0.047
+          },
+          {
+            "nm": 1599.0,
+            "depth": 0.038
+          },
+          {
+            "nm": 1718.0,
+            "depth": 0.238
+          },
+          {
+            "nm": 1751.0,
+            "depth": 0.228
+          },
+          {
+            "nm": 1946.0,
+            "depth": 0.123
+          },
+          {
+            "nm": 2048.0,
+            "depth": 0.25
+          },
+          {
+            "nm": 2184.0,
+            "depth": 0.211
+          },
+          {
+            "nm": 2294.0,
+            "depth": 0.353
+          },
+          {
+            "nm": 2346.0,
+            "depth": 0.311
+          }
+        ]
+      },
+      "nylon_webbing_yellow": {
+        "group": "synthetic",
+        "albedo_500_900": 0.7413206987281795,
+        "features": [
+          {
+            "nm": 923.0,
+            "depth": 0.047
+          },
+          {
+            "nm": 1048.0,
+            "depth": 0.043
+          },
+          {
+            "nm": 1202.0,
+            "depth": 0.232
+          },
+          {
+            "nm": 1419.0,
+            "depth": 0.183
+          },
+          {
+            "nm": 1478.0,
+            "depth": 0.163
+          },
+          {
+            "nm": 1536.0,
+            "depth": 0.184
+          },
+          {
+            "nm": 1573.0,
+            "depth": 0.121
+          },
+          {
+            "nm": 1601.0,
+            "depth": 0.107
+          },
+          {
+            "nm": 1717.0,
+            "depth": 0.365
+          },
+          {
+            "nm": 1752.0,
+            "depth": 0.35
+          },
+          {
+            "nm": 1947.0,
+            "depth": 0.218
+          },
+          {
+            "nm": 2011.0,
+            "depth": 0.211
+          },
+          {
+            "nm": 2050.0,
+            "depth": 0.356
+          },
+          {
+            "nm": 2183.0,
+            "depth": 0.307
+          },
+          {
+            "nm": 2294.0,
+            "depth": 0.433
+          },
+          {
+            "nm": 2350.0,
+            "depth": 0.382
+          }
+        ]
+      },
+      "plastic_tarp_green": {
+        "group": "synthetic",
+        "albedo_500_900": 0.3172914368104738,
+        "features": [
+          {
+            "nm": 1215.0,
+            "depth": 0.198
+          },
+          {
+            "nm": 1419.0,
+            "depth": 0.115
+          },
+          {
+            "nm": 1731.0,
+            "depth": 0.487
+          },
+          {
+            "nm": 1764.0,
+            "depth": 0.338
+          },
+          {
+            "nm": 2012.0,
+            "depth": 0.057
+          },
+          {
+            "nm": 2051.0,
+            "depth": 0.052
+          },
+          {
+            "nm": 2311.0,
+            "depth": 0.854
+          },
+          {
+            "nm": 2351.0,
+            "depth": 0.78
+          },
+          {
+            "nm": 2385.0,
+            "depth": 0.71
+          }
+        ]
+      },
+      "plastic_tarp_blue_woven": {
+        "group": "synthetic",
+        "albedo_500_900": 0.2228650426309227,
+        "features": [
+          {
+            "nm": 932.0,
+            "depth": 0.031
+          },
+          {
+            "nm": 1110.0,
+            "depth": 0.036
+          },
+          {
+            "nm": 1215.0,
+            "depth": 0.168
+          },
+          {
+            "nm": 1419.0,
+            "depth": 0.107
+          },
+          {
+            "nm": 1731.0,
+            "depth": 0.49
+          },
+          {
+            "nm": 1765.0,
+            "depth": 0.348
+          },
+          {
+            "nm": 2012.0,
+            "depth": 0.065
+          },
+          {
+            "nm": 2051.0,
+            "depth": 0.059
+          },
+          {
+            "nm": 2311.0,
+            "depth": 0.778
+          },
+          {
+            "nm": 2351.0,
+            "depth": 0.702
+          }
+        ]
+      },
+      "cotton_fabric_white": {
+        "group": "natural",
+        "albedo_500_900": 0.6232764996259352,
+        "features": [
+          {
+            "nm": 1219.0,
+            "depth": 0.044
+          },
+          {
+            "nm": 1481.0,
+            "depth": 0.251
+          },
+          {
+            "nm": 1548.0,
+            "depth": 0.178
+          },
+          {
+            "nm": 1776.0,
+            "depth": 0.064
+          },
+          {
+            "nm": 1928.0,
+            "depth": 0.22
+          },
+          {
+            "nm": 2104.0,
+            "depth": 0.34
+          },
+          {
+            "nm": 2274.0,
+            "depth": 0.221
+          },
+          {
+            "nm": 2342.0,
+            "depth": 0.298
+          },
+          {
+            "nm": 2412.0,
+            "depth": 0.07
+          }
+        ]
+      },
+      "burlap_fabric_brown": {
+        "group": "natural",
+        "albedo_500_900": 0.3335496042394015,
+        "features": [
+          {
+            "nm": 975.0,
+            "depth": 0.048
+          },
+          {
+            "nm": 1214.0,
+            "depth": 0.046
+          },
+          {
+            "nm": 1446.0,
+            "depth": 0.292
+          },
+          {
+            "nm": 1725.0,
+            "depth": 0.051
+          },
+          {
+            "nm": 1774.0,
+            "depth": 0.058
+          },
+          {
+            "nm": 1923.0,
+            "depth": 0.326
+          },
+          {
+            "nm": 2102.0,
+            "depth": 0.232
+          },
+          {
+            "nm": 2273.0,
+            "depth": 0.218
+          },
+          {
+            "nm": 2336.0,
+            "depth": 0.25
+          }
+        ]
+      }
+    },
+    "shared_synthetic_bands": {
+      "1200": {
+        "n": 6,
+        "mean_nm": 1201.5,
+        "min_nm": 1199.0,
+        "max_nm": 1202.0
+      },
+      "1420": {
+        "n": 8,
+        "mean_nm": 1415.2,
+        "min_nm": 1411.0,
+        "max_nm": 1419.0
+      },
+      "1480": {
+        "n": 4,
+        "mean_nm": 1479.5,
+        "min_nm": 1478.0,
+        "max_nm": 1482.0
+      },
+      "1540": {
+        "n": 6,
+        "mean_nm": 1535.5,
+        "min_nm": 1535.0,
+        "max_nm": 1536.0
+      },
+      "1580": {
+        "n": 6,
+        "mean_nm": 1573.0,
+        "min_nm": 1573.0,
+        "max_nm": 1573.0
+      },
+      "1600": {
+        "n": 4,
+        "mean_nm": 1600.8,
+        "min_nm": 1599.0,
+        "max_nm": 1602.0
+      },
+      "1720": {
+        "n": 6,
+        "mean_nm": 1716.7,
+        "min_nm": 1716.0,
+        "max_nm": 1718.0
+      },
+      "1760": {
+        "n": 8,
+        "mean_nm": 1754.6,
+        "min_nm": 1751.0,
+        "max_nm": 1765.0
+      },
+      "1940": {
+        "n": 4,
+        "mean_nm": 1947.0,
+        "min_nm": 1946.0,
+        "max_nm": 1948.0
+      },
+      "2020": {
+        "n": 4,
+        "mean_nm": 2011.5,
+        "min_nm": 2011.0,
+        "max_nm": 2012.0
+      },
+      "2040": {
+        "n": 6,
+        "mean_nm": 2049.5,
+        "min_nm": 2048.0,
+        "max_nm": 2050.0
+      },
+      "2180": {
+        "n": 6,
+        "mean_nm": 2183.2,
+        "min_nm": 2183.0,
+        "max_nm": 2184.0
+      },
+      "2300": {
+        "n": 6,
+        "mean_nm": 2294.0,
+        "min_nm": 2294.0,
+        "max_nm": 2294.0
+      },
+      "2340": {
+        "n": 4,
+        "mean_nm": 2347.2,
+        "min_nm": 2346.0,
+        "max_nm": 2348.0
+      },
+      "2360": {
+        "n": 4,
+        "mean_nm": 2351.0,
+        "min_nm": 2350.0,
+        "max_nm": 2352.0
+      }
+    }
+  },
+  "species_to_materials": {
+    "coated_fabric_CH_1202": {
+      "mechanism": "overtone_CH",
+      "nominal_center_nm": 1202,
+      "range_nm": [
+        1192,
+        1222
+      ],
+      "notes": "C-H second overtone of the fabric coating; present in every synthetic sample",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "coated_fabric_NH_OH_1414": {
+      "mechanism": "overtone_NH_OH",
+      "nominal_center_nm": 1414,
+      "range_nm": [
+        1402,
+        1428
+      ],
+      "notes": "N-H / O-H first overtone; in all 8 synthetic samples, 1411-1419 nm",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polyamide_NH_1535": {
+      "mechanism": "overtone_NH",
+      "nominal_center_nm": 1535,
+      "range_nm": [
+        1526,
+        1545
+      ],
+      "notes": "Polyamide N-H first overtone; nylon-specific, absent from cellulose",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polyamide_NH_1573": {
+      "mechanism": "overtone_NH",
+      "nominal_center_nm": 1573,
+      "range_nm": [
+        1562,
+        1584
+      ],
+      "notes": "Second polyamide N-H component, always paired with the 1535 nm band",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polymer_CH_overtone_1716": {
+      "mechanism": "overtone_CH",
+      "nominal_center_nm": 1716,
+      "range_nm": [
+        1700,
+        1740
+      ],
+      "notes": "C-H first overtone, the strongest synthetic-fabric band (depth 0.16-0.49)",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polymer_CH_overtone_1755": {
+      "mechanism": "overtone_CH",
+      "nominal_center_nm": 1757,
+      "range_nm": [
+        1742,
+        1772
+      ],
+      "notes": "C-H first overtone partner; the 1716+1755 doublet is the branch's anchor",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polyamide_amide_2049": {
+      "mechanism": "combination_amide",
+      "nominal_center_nm": 2049,
+      "range_nm": [
+        2036,
+        2064
+      ],
+      "notes": "Amide combination band of polyamide fabrics; depth up to 0.36",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polymer_CH_2183": {
+      "mechanism": "combination_CH",
+      "nominal_center_nm": 2183,
+      "range_nm": [
+        2170,
+        2198
+      ],
+      "notes": "C-H combination of coated polyamide fabric",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polymer_CH_2294": {
+      "mechanism": "combination_CH",
+      "nominal_center_nm": 2294,
+      "range_nm": [
+        2282,
+        2308
+      ],
+      "notes": "C-H combination; deepest SWIR band of the coated fabrics",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polymer_sheet_2122": {
+      "mechanism": "combination_CH",
+      "nominal_center_nm": 2122,
+      "range_nm": [
+        2105,
+        2140
+      ],
+      "notes": "Field-measured band of the C2RD polymer sheeting",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "polymer_sheet_2245": {
+      "mechanism": "combination_CH",
+      "nominal_center_nm": 2245,
+      "range_nm": [
+        2228,
+        2262
+      ],
+      "notes": "Field-measured partner band; with 2122 nm it gives 11/12 recall",
+      "tags": [
+        "synthetic",
+        "polymer",
+        "fabric",
+        "camouflage"
+      ],
+      "possible_materials": [
+        "camouflage garnish",
+        "coated fabric",
+        "tarpaulin",
+        "webbing"
+      ]
+    },
+    "water_body_OH_exclusion": {
+      "mechanism": "combination_OH",
+      "role": "exclusion_only",
+      "notes": "Open-water veto, never a positive match. Each band carries its own min_depth: the OH overtones differ in strength by a factor of two, so one species-level threshold cannot serve all four. A rule that names this species is disabled outright on a sensor that samples none of these bands, because an exclusion that cannot be tested would pass everywhere and let the rule fire on open water.",
+      "bands": [
+        {
+          "nominal_center_nm": 970,
+          "range_nm": [
+            950,
+            990
+          ],
+          "mechanism": "2nd_overtone_OH_stretch",
+          "min_depth": 0.6,
+          "notes": "Measured on the C2RD Pourrieres scene: pool and pond water 0.80-0.89, deepest non-water surface (a black polymer sheet) 0.35"
+        },
+        {
+          "nominal_center_nm": 1200,
+          "range_nm": [
+            1180,
+            1220
+          ],
+          "mechanism": "combination_bend+stretch",
+          "min_depth": 0.55,
+          "notes": "Measured on the C2RD Pourrieres scene: water 0.75-0.78, deepest non-water surface 0.31"
+        },
+        {
+          "nominal_center_nm": 1450,
+          "range_nm": [
+            1400,
+            1500
+          ],
+          "mechanism": "1st_overtone_OH_stretch",
+          "min_depth": 0.8,
+          "notes": "Inert by design: leaf water alone reaches 0.54 here, so this band cannot separate open water from vegetation"
+        },
+        {
+          "nominal_center_nm": 1940,
+          "range_nm": [
+            1900,
+            1980
+          ],
+          "mechanism": "combination_OH",
+          "min_depth": 0.5,
+          "notes": "Laboratory value, not validated on field data: no sensor used here samples 1900-1980 nm"
+        }
+      ],
+      "tags": [
+        "water",
+        "exclusion"
+      ],
+      "possible_materials": [
+        "open water"
+      ]
+    }
+  },
+  "composite_signatures": [
+    {
+      "name": "camouflage_fabric_cut_sheet",
+      "category": "synthetic",
+      "min_depth_overrides": {
+        "polymer_CH_overtone_1716": 0.12,
+        "polymer_CH_overtone_1755": 0.1,
+        "polyamide_NH_1535": 0.05,
+        "polyamide_amide_2049": 0.05
+      },
+      "required_species": [
+        "polymer_CH_overtone_1716",
+        "polymer_CH_overtone_1755"
+      ],
+      "bonus_species": [
+        "coated_fabric_CH_1202",
+        "coated_fabric_NH_OH_1414",
+        "polymer_CH_2294"
+      ],
+      "base_confidence": 0.78,
+      "interpretation": "Die-cut sheet camouflage garnish: one coated fabric punched with leaf-shaped voids, not knotted netting",
+      "required_absent": [
+        "water_body_OH_exclusion"
+      ]
+    },
+    {
+      "name": "camouflage_fabric_polyamide",
+      "category": "synthetic",
+      "min_depth_overrides": {
+        "polymer_CH_overtone_1716": 0.12,
+        "polymer_CH_overtone_1755": 0.1,
+        "polyamide_NH_1535": 0.05,
+        "polyamide_amide_2049": 0.05
+      },
+      "required_species": [
+        "polymer_CH_overtone_1716",
+        "polyamide_NH_1535",
+        "polyamide_amide_2049"
+      ],
+      "bonus_species": [
+        "polyamide_NH_1573",
+        "polymer_CH_2183",
+        "polymer_CH_overtone_1755"
+      ],
+      "base_confidence": 0.82,
+      "interpretation": "Polyamide (nylon) camouflage fabric or webbing; amide bands separate it from polyolefin sheeting",
+      "required_absent": [
+        "water_body_OH_exclusion"
+      ]
+    },
+    {
+      "name": "camouflage_fabric_coated_polyolefin",
+      "category": "synthetic",
+      "min_depth_overrides": {
+        "polymer_CH_overtone_1716": 0.12,
+        "polymer_CH_overtone_1755": 0.1,
+        "polyamide_NH_1535": 0.05,
+        "polyamide_amide_2049": 0.05
+      },
+      "required_species": [
+        "polymer_CH_overtone_1716",
+        "polymer_CH",
+        "CH_aliphatic"
+      ],
+      "bonus_species": [
+        "coated_fabric_CH_1202",
+        "coated_fabric_NH_OH_1414",
+        "polymer_CH_overtone_1755"
+      ],
+      "base_confidence": 0.8,
+      "interpretation": "PVC- or polyolefin-coated woven camouflage sheet; very deep 2310/2350 nm bands, no amide",
+      "required_absent": [
+        "water_body_OH_exclusion"
+      ]
+    },
+    {
+      "name": "camouflage_garnish_over_vegetation",
+      "category": "synthetic",
+      "min_depth_overrides": {
+        "polymer_CH_overtone_1716": 0.12,
+        "polymer_CH_overtone_1755": 0.1,
+        "polyamide_NH_1535": 0.05,
+        "polyamide_amide_2049": 0.05
+      },
+      "required_species": [
+        "polymer_CH_overtone_1716",
+        "chlorophyll_a+b"
+      ],
+      "bonus_species": [
+        "polyamide_NH_1535",
+        "red_edge_inflection",
+        "polymer_CH_overtone_1755"
+      ],
+      "base_confidence": 0.62,
+      "interpretation": "Cut-sheet garnish laid over vegetation: fabric C-H bands mixed with chlorophyll seen through the voids. The intended operational signature",
+      "required_absent": [
+        "water_body_OH_exclusion"
+      ]
+    },
+    {
+      "name": "camouflage_polymer_sheet_field",
+      "category": "synthetic",
+      "required_species": [
+        "polymer_sheet_2122",
+        "polymer_sheet_2245"
+      ],
+      "min_depth_overrides": {
+        "polymer_sheet_2122": 0.12,
+        "polymer_sheet_2245": 0.1
+      },
+      "required_absent": [
+        "water_body_OH_exclusion"
+      ],
+      "bonus_species": [
+        "polymer_CH_overtone_1716",
+        "polymer_CH_2183"
+      ],
+      "base_confidence": 0.75,
+      "interpretation": "Polymer sheeting, derived from the C2RD Pourrieres targets themselves. Detects 11 of 12 sheets; the other hits are a bin liner, a transparent bag and a windsock, which are also polymer. Open water is excluded through water_body_OH_exclusion, whose 970 and 1200 nm bands are measured on this scene"
+    },
+    {
+      "name": "natural_fibre_fabric",
+      "category": "organic",
+      "required_species": [
+        "cellulose_OH",
+        "cellulose"
+      ],
+      "required_absent": [
+        "polymer_CH_overtone_1716"
+      ],
+      "bonus_species": [
+        "lignin"
+      ],
+      "base_confidence": 0.7,
+      "interpretation": "Cotton, hessian or canvas. Separated from synthetic camouflage by the absence of the 1716 nm C-H overtone"
+    }
+  ]
+}
