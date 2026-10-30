@@ -37,6 +37,18 @@ exist only because the engine assumed contiguous coverage.
   rule had one; the three laboratory fabric rules keyed on C-H overtones
   alone, and deep open water satisfied them.
 - **Point mode reads the spectrum with `r3.what`.** See item 1.
+- **Continua respect spectral gaps**, and a band with no shoulder reports no
+  depth instead of `1 - R`. See item 2.
+- **Three-valued species logic** (detected / absent / indeterminate), plus a
+  `validity=` output map. See item 3.
+- **Calibrated confidence** from depth margin and band support. See item 6.
+- **Reflectance storage scale is resolved explicitly** (`reflectance_scale=`,
+  detected from the cube's range by default). Found while testing item 3: band
+  depth is a ratio and never cared, but every absolute threshold did, and on a
+  cube scaled by 10000 the new saturation guard flagged all 346,800 pixels of
+  a test window at once. This is also why `sand_albedo_threshold` previously
+  had to be given as `2500` to mean 0.25; it now means what it says, which is
+  a **breaking change for existing command lines**.
 
 ## 1. Point mode via r3.what — done, keep as the pattern
 
@@ -68,10 +80,12 @@ All four modules return identical values at the same coordinate, and the
 helper indexes by band number rather than by position, so `only_valid`
 filtering and any wavelength sorting stay correct.
 
-One pre-existing defect surfaced while building: *i.hyper.poppy* ships only
-`i.hyper.poppy.html` and no `i.hyper.poppy.md`, so `make` fails at the man
-page step (`No rule to make target .../i.hyper.poppy.md`). The script itself
-installs; only the manual does not build.
+Two pre-existing defects surfaced alongside and are now fixed: *i.hyper.poppy*
+shipped only `i.hyper.poppy.html` and no `i.hyper.poppy.md`, so `make` failed
+at the man page step; and *i.hyper.cannabis* and *i.hyper.poppy* had fallen
+behind *i.hyper.sleuth* on two shared-code improvements (`garray.array(mapname=)`
+instead of the two-step read, and in-place `_safe_cube()` via `np.nan_to_num`).
+All three are in sync again.
 
 Every other `extract_band()` / `r3.to.rast` caller in the family is **not** a
 candidate: *i.hyper.albedo*, *i.hyper.cropname*, *i.hyper.endmembers*,
@@ -84,43 +98,61 @@ a full raster. *i.hyper.smac* already has the better answer for that case in
 `lib/r3d_slice.py`, which reads a Z-slice through ctypes with no subprocess at
 all.
 
-## 2. Continua must respect spectral gaps — correctness bug
+## 2. Continua must respect spectral gaps — done
 
-`_compute_depths_numpy()` and `_band_depth()` take the continuum as the
-brightest band within +-150 nm of the feature, with no regard for whether the
-sensor actually covers that interval. Across the 1784-1984 nm gap the nearest
-"neighbour" is 200 nm away, so every band depth near a gap edge is measured
-against the far side of the gap. This is how a water band depth of 0.64-0.70
-came to be reported for a cube that has no bands within 150 nm of 1940 nm.
+`_spectral_segments()` numbers the contiguous blocks of coverage, splitting
+wherever the band spacing exceeds `max(50 nm, 5 x median spacing)`, and both
+`_compute_depths_numpy()` and `_band_depth()` now take the continuum only from
+bands in the feature's own segment. The relative threshold is what makes this
+safe for coarse sensors: 60 nm between bands is normal for a multispectral
+instrument and must not read as a gap.
 
-- Split the band list wherever the spacing exceeds about 50 nm, and compute
-  continua within each contiguous segment only.
-- Report no depth, rather than a wrong one, where a feature has no continuum
-  shoulder on at least one side inside its own segment.
-- Acceptance: on a cube with a 200 nm gap, no feature within 150 nm of a gap
-  edge takes its continuum from the other side.
+A band with no neighbour inside its own segment has no continuum and so no
+measurable depth. It now reports NaN (full map) or 0 (point mode) instead of
+the `1 - R` that a default continuum of 1.0 produced, which invented a deep
+absorption at every isolated band, deeper the darker the surface.
 
-## 3. Three-valued species logic: detected / absent / indeterminate
+Measured on a real EMIT cube (`emit_20250410`, 244 bands): the gap at
+1320-1439 nm is only 119 nm wide, narrower than the +-150 nm window, so **10
+of 244 bands** were taking their continuum from the far side. On 64 sampled
+pixels the five bands carrying the 1400-1500 nm water feature read a mean
+depth of 0.62 where the correct value is 0.41, a mean error of +0.21 and a
+maximum of +0.34. Every unaffected band is bit-identical before and after.
 
-The water bug was `absent` and `untestable` being the same value. That is now
-fixed at rule granularity, but the same confusion remains per pixel.
+Three of the module's own tests (`ferrihydrite`, `crocidolite_not_chrysotile`,
+`acid_mine_drainage`) were passing *because* of this bug: their synthetic
+spectra place the nearest continuum band 170 nm from the feature, so the
+features had no shoulder and the 1.0 fallback manufactured the depth. Their
+spectra now carry a continuum anchor within 150 nm of each diagnostic band.
 
-All six apparent polyamide detections among the field targets came from
-surfaces with SWIR reflectance below 700/10000, where band depth is noise: the
-apparent amide depths of 0.12-0.31 correlate monotonically with darkness, not
-with material. At the same time the eight bright sheets (24-35 % SWIR
-reflectance) show genuinely no C-H absorption, so absence there is real signal.
-The engine cannot currently tell those two situations apart.
+## 3. Three-valued species logic — done
 
-- Add a minimum-reflectance guard per feature, below which a species is
-  *indeterminate* rather than detected or absent.
-- A rule with an indeterminate input declines to fire rather than firing
-  positive.
-- Saturated pixels are a second case of the same kind: the white glass-fibre
-  panel reads 113 % reflectance at 550 nm with nodata through SWIR1 and comes
-  out merely "unclassified", indistinguishable from a confident negative.
-- Acceptance: a validity or quality output map alongside class and confidence,
-  distinguishing classified, unclassified, low-signal and saturated.
+`_species_measurable()` marks a species *indeterminate* at a pixel when all of
+its own bands are darker than **min_reflectance** (default 0.02 reflectance).
+No rule is scored where any of its required or its required-absent species is
+indeterminate, in both the full-map and the point path: "unreadable" is not
+"absent", and treating it as such is the same mistake as treating an unsampled
+exclusion as a pass.
+
+`validity=` writes the per-pixel outcome the class map cannot express: NULL
+for no data, 1 classified, 2 unclassified (readable, no rule fired), 3 low
+signal, 4 saturated. Low-signal and saturated pixels are left unclassified
+rather than passed off as an ordinary no-match.
+
+Verified on the surveyed spectra: at the default 0.02 the guard marks 85 to 90
+species indeterminate on pool and pond water and **removes the
+`acid_mine_drainage` false positive on open water** that the POI cross-tab
+found. A unit test holds the same spectrum at full brightness and at a
+hundredth of it: the band depths are identical to 1e-9, the bright pixel
+fires, the dark one is withheld, and with the guard disabled the dark one
+fires again.
+
+What it does not reach: the dark-target amide artefacts at 0.023-0.034
+reflectance need a floor near 0.07 to be excluded, and 0.07 is too aggressive
+as a default because a vegetation pixel's chlorophyll bands sit at 0.03-0.08
+and would be blocked with it. The option exists for dark-target work; the
+default is set where it demonstrably removes false positives without
+suppressing real classes.
 
 ## 4. A shape detector beside the feature detector — architectural
 
@@ -153,17 +185,40 @@ and standard deviation.
   `c2rd_target_spectra.csv` with an angle below 0.20 rad, and open water and
   limestone are not.
 
-## 6. Calibrated confidence
+## 6. Calibrated confidence — done, with a limit worth stating
 
-`score = base_score x (1 + 0.05 x bonus_count)` carries no information about
-how strong the evidence actually is. A strict run on this scene reached mean
-confidence 0.99, minimum 0.90, on what was a degenerate five-class split
-driven entirely by the NDRE pre-screen.
+The reported confidence is now
 
-- Fold depth margin above threshold, and the number of supporting bands, into
-  the reported confidence.
-- Acceptance: confidence correlates with agreement against the surveyed ground
-  classes, instead of being near-constant.
+```
+evidence_sp = sqrt(depth_margin_sp x band_support_sp)
+evidence    = geometric mean over required species of evidence_sp
+score       = min(1, base_score x (0.55 + 0.45 x evidence) x (1 + 0.05 x bonus))
+```
+
+where `depth_margin_sp` is how far the species' deepest band clears its own
+threshold over a 0.20 scale, and `band_support_sp` is the fraction of that
+species' sampled bands which cleared it. The base score became a ceiling that
+says how diagnostic the rule is; the pixel's own evidence decides how much of
+it is earned. A match that only just clears every threshold keeps 55 % of the
+base score, which is what a unit test checks.
+
+The two components are independent on purpose: one band scraping over the
+threshold while its neighbours stay flat is a spike, the same depth across six
+of eight bands is an absorption band, and the geometric mean needs both. The
+geometric mean across species means one species at its threshold pulls the
+match down without zeroing it, and adding a required species can never raise a
+rule's score.
+
+**The acceptance criterion as written was not met, and cannot be met this
+way.** Confidence does not correlate with agreement against the surveyed
+classes, because the surviving errors are not weak-evidence errors: the red
+roof, the orange court floor and the windsock that all read
+`phycoerythrin_algae` have genuinely deep features in the windows that rule
+tests, and earn high confidence honestly. Across 15 surveyed spectra the top
+hypothesis now takes 8 distinct confidence values instead of 3, spanning
+0.78-0.99, but the wrong answers are not the low ones. Calibration narrows
+what a score means; it cannot detect a rule that is not diagnostic. That is
+item 4 and item 5.
 
 ## 7. Regression testing against field data, not synthetic spectra
 
@@ -193,9 +248,32 @@ classifies as `ice_snow`; and asphalt is missed entirely despite
   almost everything in point mode at the default `min_band_depth=0.02`,
   including asphalt and bare soil. They need the same treatment as the
   camouflage branch: floors measured against real surfaces.
-- Class 0 is exported as NULL, so "unclassified" and "no data" cannot be
-  distinguished in the output map.
-- The module leaves the 3D computational region changed on exit; it should
-  restore it through a scoped region manager.
+- Class 0 is still exported as NULL in the class map, so "unclassified" and
+  "no data" remain indistinguishable *there*; the `validity=` map now carries
+  the distinction, but the class map itself should stop conflating them.
+- The full-map path leaves the 3D computational region changed on exit; it
+  should restore it through a scoped region manager, as the point-mode
+  `r3.what` helper now does with `gs.use_temp_region()`. A run killed
+  mid-flight leaves the region at a single depth, which then silently
+  changes what a later `r3.what` returns.
 - Raster writing round-trips through ASCII at `%.4f`, which both costs time
   and silently quantises reflectance.
+- The `atexit` cleanup of temporary 2D rasters does not survive SIGTERM: a
+  run stopped part-way leaves one full-scene raster per band behind (143
+  rasters, 254 MB, after one interrupted point-mode run on the C2RD cube).
+  A signal handler should remove them.
+- The sand fallback's `sand_albedo_threshold` and the two reflectance guards
+  are the only scale-dependent numbers in the module. Any further absolute
+  threshold belongs behind `reflectance_scale` too; every other test in the
+  engine is a ratio and is indifferent to storage scale.
+- `min_reflectance` guards a species by the brightest of its own bands. A
+  contrast-based test would be stricter and better founded -- a dip matters
+  when `continuum x depth` exceeds the sensor noise, not when the surface is
+  bright -- but it needs the continuum value, which the depth array does not
+  carry. Worth doing when the depth computation is next touched: it would
+  catch the dark-target amide artefacts at 0.023-0.034 reflectance that the
+  present default cannot reach.
+- `reflectance_scale` detection reads the cube's maximum, so a scene that is
+  entirely dark could be misread. It is reported on every run and can be
+  given explicitly, but a check against the band metadata's own scale factor
+  (where `i.hyper.import` records one) would be better than inference.

@@ -42,6 +42,45 @@
 # %end
 
 # %option
+# % key: validity
+# % type: string
+# % required: no
+# % label: Output per-pixel validity raster name
+# % description: 1=classified, 2=unclassified, 3=low signal (below min_reflectance), 4=saturated (above max_reflectance); NULL where the cube has no data. Separates "no class could be supported here" from "a class was ruled out"
+# % guisection: Output
+# %end
+
+# %option
+# % key: reflectance_scale
+# % type: double
+# % required: no
+# % answer: 0
+# % label: Divisor that converts stored values to 0-1 reflectance (0 = detect from the data)
+# % description: Surface-reflectance products are often stored scaled by 1000 or 10000. Band depth is a ratio and does not care, but the absolute thresholds (min_reflectance, max_reflectance, sand_albedo_threshold) do. Detected from the cube's own value range when 0, and reported
+# % guisection: Processing
+# %end
+
+# %option
+# % key: min_reflectance
+# % type: double
+# % required: no
+# % answer: 0.02
+# % label: Reflectance below which a band depth is treated as unmeasurable
+# % description: A species whose bands are all darker than this is reported as indeterminate rather than detected or absent, and no rule that needs it can fire. Band depth is a ratio, so on a dark surface a large depth can correspond to a reflectance difference smaller than the sensor noise. Set to 0 to disable
+# % guisection: Processing
+# %end
+
+# %option
+# % key: max_reflectance
+# % type: double
+# % required: no
+# % answer: 1.2
+# % label: Reflectance above which a pixel is treated as saturated
+# % description: Pixels with any band above this are flagged saturated in the validity map and left unclassified, instead of being reported as an ordinary no-match. Set very high (e.g. 100) to disable
+# % guisection: Processing
+# %end
+
+# %option
 # % key: min_band_depth
 # % type: double
 # % required: no
@@ -1554,15 +1593,73 @@ QUARTZOFELDSPATHIC_SAND_CLASS_IDX = len(CLASS_LABELS) - 1
 
 _CONTINUUM_MARGIN = 150.0  # nm half-window for continuum estimation
 
+# A continuum must be built from bands the sensor actually measured next to
+# the feature. Most airborne and drone products drop the two water-vapour
+# windows, leaving spectral gaps of 150-200 nm, and a plain "within +-150 nm"
+# window then reaches across a gap and takes the continuum from the far side.
+# That is not a shoulder of the feature at all, and it is how a water band
+# depth of 0.64-0.70 came to be reported for a cube with no bands within
+# 150 nm of 1940 nm. A gap is a spacing far larger than the sensor's own
+# typical band spacing, so the test is relative: this keeps coarse
+# multispectral sensors (where 60 nm between bands is normal) in one segment
+# while still splitting a 5 nm imaging spectrometer at a 150 nm hole.
+_GAP_MIN_NM = 50.0
+_GAP_SPACING_FACTOR = 5.0
+
+# Confidence calibration. A rule's base score says how diagnostic the rule
+# is when it fires; on its own it says nothing about how well this particular
+# pixel fits, which is why a strict run on the C2RD scene could report a mean
+# confidence of 0.99 over what was a degenerate two-way split. The reported
+# confidence is therefore the base score scaled by the depth margin of the
+# rule's weakest required species: _EVIDENCE_DEPTH_SCALE is how much extra
+# depth above the threshold counts as full evidence, and _EVIDENCE_FLOOR is
+# the fraction of the base score a match earns when it only just clears every
+# threshold. The scale is set from the module's own depth guide, where 0.10
+# to 0.30 is a moderate feature and most composite rules activate there.
+_EVIDENCE_DEPTH_SCALE = 0.20
+_EVIDENCE_FLOOR = 0.55
+
+
+def _spectral_segments(wavelengths: np.ndarray) -> np.ndarray:
+    """Contiguous-coverage segment index for each band.
+
+    Returns an array of the same length as *wavelengths*, numbering the
+    contiguous blocks of coverage from 0 upwards; the index increases at each
+    spectral gap. Bands in different segments are never used as each other's
+    continuum. Assumes *wavelengths* is sorted ascending, as
+    :func:`get_band_info` returns it; on unsorted input no gap is detected and
+    the behaviour falls back to a single segment.
+    """
+    wl = np.asarray(wavelengths, dtype=float)
+    if wl.size < 2:
+        return np.zeros(wl.size, dtype=np.int32)
+    spacing = np.diff(wl)
+    threshold = max(_GAP_MIN_NM, _GAP_SPACING_FACTOR * float(np.median(spacing)))
+    return np.concatenate(([0], np.cumsum(spacing > threshold))).astype(np.int32)
+
 
 def _band_depth(feat_reflectance: float, feat_center: float,
                 all_centers: list[float], all_refl: list[float]) -> float:
-    """Band depth = 1 - R_band / R_continuum (local max in ±margin window)."""
+    """Band depth = 1 - R_band / R_continuum (local max in ±margin window).
+
+    Only bands in the feature's own contiguous coverage segment can serve as
+    its continuum, so a shoulder is never taken from across a spectral gap.
+    A feature with no usable neighbour has no continuum and therefore no
+    measurable depth: this returns 0.0 rather than assuming a continuum of
+    1.0, which would have reported a depth of ``1 - R`` -- a large spurious
+    value on any dark surface -- for an isolated band.
+    """
+    centers = np.asarray(all_centers, dtype=float)
+    segments = _spectral_segments(centers)
+    own = segments[int(np.argmin(np.abs(centers - feat_center)))]
     neighbors = [
-        r for c, r in zip(all_centers, all_refl)
+        r for c, r, seg in zip(all_centers, all_refl, segments)
         if abs(c - feat_center) < _CONTINUUM_MARGIN and c != feat_center
+        and seg == own
     ]
-    continuum = max(neighbors) if neighbors else 1.0
+    if not neighbors:
+        return 0.0
+    continuum = max(neighbors)
     if continuum <= 0:
         return 0.0
     return max(0.0, 1.0 - feat_reflectance / continuum)
@@ -1574,6 +1671,7 @@ def interpret_spectrum(
     ndre: Optional[float] = None,
     ndre_threshold: float = 0.15,
     wavelengths: Optional[np.ndarray] = None,
+    min_reflectance: float = 0.0,
 ) -> SpectralInterpretation:
     """Interpret a reflectance spectrum from absorption feature triplets.
 
@@ -1663,11 +1761,43 @@ def interpret_spectrum(
     detected = set(species_map.keys())
     hypotheses: list[MaterialHypothesis] = []
 
+    # Bands this spectrum actually carries per species, for the band-support
+    # half of the confidence. Counted from the input, not from the matches,
+    # so a species detected in one of eight sampled bands is not treated as
+    # strongly as one detected in all eight.
+    sp_band_counts: dict[str, list[float]] = {}
+    for entry in SPECTRAL_FEATURES_DB:
+        lo, hi = entry["range"]
+        here = [c for c, _fw, _r in triplets if lo <= c <= hi]
+        if here:
+            sp_band_counts.setdefault(entry["species"], []).extend(here)
+
     # Rules the sensor cannot decide are dropped here too, for the same
     # reason as in the full-map path: an untestable exclusion would pass.
     unsupported = unsupported_rules(wavelengths) if wavelengths is not None else {}
     for name, reason in sorted(unsupported.items()):
         flags.append(f"Rule {name} disabled: {reason}")
+
+    # Species too dark here for a band depth to carry information. Same test
+    # as the full-map path: neither detected nor absent, so any rule needing
+    # one is withheld rather than decided on noise.
+    indeterminate: set[str] = set()
+    if min_reflectance > 0:
+        refl_by_species: dict[str, float] = {}
+        for entry in SPECTRAL_FEATURES_DB:
+            lo, hi = entry["range"]
+            here = [r for c, _fw, r in triplets if lo <= c <= hi]
+            if here:
+                sp = entry["species"]
+                refl_by_species[sp] = max(refl_by_species.get(sp, -np.inf), max(here))
+        indeterminate = {sp for sp, r in refl_by_species.items()
+                         if r < min_reflectance}
+        for sp in sorted(indeterminate):
+            flags.append(
+                f"{sp} is indeterminate: its bands are below "
+                f"{min_reflectance:g} reflectance, too dark for a band depth "
+                "to be meaningful"
+            )
 
     for rule in COMPOSITE_RULES:
         if rule["name"] in unsupported:
@@ -1700,8 +1830,33 @@ def interpret_spectrum(
         ):
             continue
 
+        if indeterminate.intersection(req_counts) or indeterminate.intersection(
+                rule.get("required_absent", [])):
+            continue
+
         bonus_hit = sum(1 for sp in rule.get("bonus_species", []) if sp in detected)
-        score = min(1.0, rule["base_score"] * (1.0 + 0.05 * bonus_hit))
+        # Same calibration as the full-map path: the base score is the
+        # ceiling and the weakest required species' depth margin decides how
+        # much of it this spectrum earns.
+        margins = []
+        for sp in req_counts:
+            matches = species_map.get(sp, [])
+            best = max((fe[0].depth - _threshold(sp, fe[1])
+                        for fe in matches), default=0.0)
+            margin = min(1.0, max(0.0, best / _EVIDENCE_DEPTH_SCALE))
+            # Band support: of the species' bands this sensor samples, how
+            # many actually cleared the threshold here.
+            available = len(sp_band_counts.get(sp, ())) or 1
+            cleared = sum(1 for fe in matches
+                          if fe[0].depth >= _threshold(sp, fe[1]))
+            support = min(1.0, cleared / available)
+            margins.append((margin * support) ** 0.5)
+        evidence = (
+            float(np.exp(np.mean(np.log(np.maximum(margins, 1e-6)))))
+            if margins else 1.0
+        )
+        strength = _EVIDENCE_FLOOR + (1.0 - _EVIDENCE_FLOOR) * evidence
+        score = min(1.0, rule["base_score"] * strength * (1.0 + 0.05 * bonus_hit))
 
         evidence = [
             f"{sp} @ {fe[0].center_nm:.0f}nm (depth={fe[0].depth:.3f})"
@@ -1776,26 +1931,42 @@ def _compute_depths_numpy(cube: np.ndarray, wavelengths: np.ndarray,
 
     Returns
     -------
-    depths : shape (Z, pixels), band depth = 1 - R / R_continuum, ≥ 0
+    depths : shape (Z, pixels), band depth = 1 - R / R_continuum, >= 0;
+        NaN where no continuum could be measured (the band has no neighbour
+        inside its own coverage segment, or every such neighbour is nodata).
+        NaN never satisfies a ``>=`` threshold test, so an unmeasurable band
+        counts as "not detected" rather than as a spurious detection.
+
+    Notes
+    -----
+    The continuum is taken only from bands in the same contiguous coverage
+    segment as the feature (see :func:`_spectral_segments`), so it is never
+    read from the far side of a spectral gap.
     """
     Z = len(wavelengths)
-    depths = np.zeros_like(cube)
+    depths = np.full_like(cube, np.nan)
+    segments = _spectral_segments(wavelengths)
     for i in range(Z):
-        mask = np.abs(wavelengths - wavelengths[i]) < margin
+        mask = (np.abs(wavelengths - wavelengths[i]) < margin) & (segments == segments[i])
         mask[i] = False
-        if mask.any():
-            # All-NaN columns (true no-data pixels) are expected here and are
-            # handled right below by substituting continuum=1.0; suppress the
-            # resulting "All-NaN slice" RuntimeWarning, which np.errstate
-            # does not catch (it's raised via warnings, not a fp exception).
-            with np.errstate(all='ignore'), warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=RuntimeWarning)
-                local_max = np.nanmax(cube[mask], axis=0)
-            local_max = np.where(np.isnan(local_max), 1.0, local_max)
-        else:
-            local_max = np.ones(cube.shape[1])
-        local_max = np.maximum(local_max, 1e-10)
-        depths[i] = np.maximum(0.0, 1.0 - cube[i] / local_max)
+        if not mask.any():
+            # Isolated band: no shoulder, so no depth. Leaving this NaN is
+            # the point -- substituting a continuum of 1.0 used to report
+            # 1 - R here, which on a dark surface is a deep "absorption"
+            # that does not exist.
+            continue
+        # All-NaN columns (true no-data pixels) are expected here and stay
+        # NaN below; suppress the resulting "All-NaN slice" RuntimeWarning,
+        # which np.errstate does not catch (it's raised via warnings, not a
+        # fp exception).
+        with np.errstate(all='ignore'), warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            local_max = np.nanmax(cube[mask], axis=0)
+        with np.errstate(all='ignore'):
+            usable = np.isfinite(local_max) & (local_max > 1e-10)
+            depths[i] = np.where(
+                usable, np.maximum(0.0, 1.0 - cube[i] / np.where(usable, local_max, 1.0)),
+                np.nan)
     return depths
 
 
@@ -1824,6 +1995,87 @@ def _accumulate_species_best_depth(depths_chunk: np.ndarray,
         with np.errstate(invalid='ignore'), warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             arr[pix_start:pix_end] = np.nanmax(depths_chunk[band_idxs], axis=0)
+
+
+# Validity codes written to the optional validity= raster. They separate the
+# three things the class map alone conflates: a class was found, no class
+# could be supported although the pixel was readable, and the pixel was not
+# readable in the first place.
+VALIDITY_NODATA = 0
+VALIDITY_CLASSIFIED = 1
+VALIDITY_UNCLASSIFIED = 2
+VALIDITY_LOW_SIGNAL = 3
+VALIDITY_SATURATED = 4
+VALIDITY_LABELS = {
+    VALIDITY_CLASSIFIED: "classified",
+    VALIDITY_UNCLASSIFIED: "unclassified",
+    VALIDITY_LOW_SIGNAL: "low signal",
+    VALIDITY_SATURATED: "saturated",
+}
+
+
+def _detect_reflectance_scale(raster3d: str) -> float:
+    """Divisor that brings the cube's stored values into 0-1 reflectance.
+
+    Band depth is a ratio, so the engine's feature detection is indifferent to
+    the storage scale; the absolute thresholds are not. Surface-reflectance
+    products commonly ship scaled by 1000 or 10000 (the C2RD Pourrieres
+    PARGE/ATCOR mosaic has a true range of -975 to 14981), and comparing such
+    values against a threshold of 0.02 or 1.2 is meaningless. The scale is
+    read from the cube's own range and reported, so a wrong guess is visible
+    rather than silent.
+    """
+    from grass.exceptions import CalledModuleError
+
+    try:
+        info = gs.raster3d_info(raster3d)
+        top = float(info["max"])
+    except (CalledModuleError, KeyError, TypeError, ValueError):
+        gs.warning("Could not read the cube's value range; assuming values "
+                   "are already 0-1 reflectance.")
+        return 1.0
+    if not np.isfinite(top):
+        return 1.0
+    for limit, scale in ((1.5, 1.0), (150.0, 100.0), (1500.0, 1000.0)):
+        if top <= limit:
+            return scale
+    return 10000.0
+
+
+def _species_measurable(cube: np.ndarray,
+                        sp_index: dict[str, list[tuple[int, float]]],
+                        min_reflectance: float) -> dict[str, np.ndarray]:
+    """Per species, whether this pixel is bright enough for a depth to mean
+    something.
+
+    Band depth is a ratio, ``1 - R / R_continuum``, so it says nothing about
+    the absolute size of the dip. On a surface reflecting 2 % in the SWIR a
+    depth of 0.3 is a reflectance difference of 0.006, at or below the noise
+    of an atmospherically corrected imaging spectrometer. Measured on the
+    C2RD Pourrieres targets, every apparent polyamide detection (N-H 1535 nm
+    and amide 2049 nm depths of 0.12-0.31) came from a surface below 0.07
+    SWIR reflectance, and the apparent depth correlated monotonically with
+    darkness rather than with material. A species whose own bands are all
+    darker than *min_reflectance* is therefore *indeterminate* here: neither
+    detected nor absent, and no rule that needs it may fire.
+
+    Returns one boolean array per species; True means measurable. A species
+    with no bands in this sensor is absent from the result, which the caller
+    treats as measurable so that the separate coverage test
+    (:func:`unsupported_rules`) remains the single place that decides it.
+    """
+    out: dict[str, np.ndarray] = {}
+    if min_reflectance <= 0:
+        return out
+    for sp, bands in sp_index.items():
+        idxs = [i for i, _floor in bands]
+        if not idxs:
+            continue
+        with np.errstate(invalid='ignore'), warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            brightest = np.nanmax(cube[idxs], axis=0)
+        out[sp] = np.isfinite(brightest) & (brightest >= min_reflectance)
+    return out
 
 
 def _species_percentile_thresholds(best_depth: dict[str, np.ndarray],
@@ -1934,7 +2186,8 @@ def warn_unsupported_rules(wavelengths: np.ndarray) -> dict[str, str]:
 
 def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
                             min_depth: float = 0.02,
-                            species_percentile_thresholds: Optional[dict[str, float]] = None
+                            species_percentile_thresholds: Optional[dict[str, float]] = None,
+                            species_measurable: Optional[dict[str, np.ndarray]] = None
                             ) -> np.ndarray:
     """Score all composite rules per pixel using vectorized numpy.
 
@@ -1953,9 +2206,21 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
         whole scene registering as a "feature" everywhere purely from local
         band-depth geometry, not a genuine localized absorption.
 
+    species_measurable : optional species -> bool array, from
+        :func:`_species_measurable`. False marks a species as *indeterminate*
+        at that pixel: too dark for a band depth to carry information. A rule
+        is not scored where any of its required or required-absent species is
+        indeterminate, because "absent" and "unreadable" are different
+        things and treating the second as the first is what lets a rule fire
+        on a surface that cannot support it. Species missing from the mapping
+        count as measurable.
+
     Returns
     -------
-    scores : shape (n_rules, pixels), score 0–1 per rule per pixel
+    scores : shape (n_rules, pixels), score 0–1 per rule per pixel. The value
+        is the rule's base score scaled by how far its evidence sits above
+        the detection threshold, so it reflects the strength of the match and
+        not only which rule matched.
     """
     n_pixels = depths.shape[1]
     sp_index = _build_band_species_index(wavelengths)
@@ -1989,6 +2254,38 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
             return np.zeros(n_pixels, dtype=np.int32)
         return np.sum(hits, axis=0).astype(np.int32)
 
+    measurable = species_measurable or {}
+
+    def _species_measurable_here(sp: str) -> Optional[np.ndarray]:
+        """None when nothing is known about this species' measurability."""
+        return measurable.get(sp)
+
+    def _species_evidence(sp: str, threshold: float) -> np.ndarray:
+        """Strength of this species' evidence, in [0, 1].
+
+        Two independent things make a detection convincing, and a band depth
+        on its own reports neither: how far the deepest band sits above the
+        threshold, and how much of the species' window agrees. A single band
+        scraping over the threshold while its seven neighbours stay flat is a
+        spike; the same depth across six of eight bands is an absorption
+        band. They are combined as a geometric mean, so a high value needs
+        both.
+        """
+        bands = sp_index.get(sp, [])
+        if not bands:
+            return np.zeros(n_pixels, dtype=np.float32)
+        best = np.full(n_pixels, -np.inf, dtype=np.float32)
+        detected = np.zeros(n_pixels, dtype=np.float32)
+        for i, floor in bands:
+            thresh = max(threshold, floor)
+            with np.errstate(invalid='ignore'):
+                over = np.where(np.isfinite(depths[i]), depths[i] - thresh, -np.inf)
+            best = np.maximum(best, over.astype(np.float32))
+            detected += (over >= 0.0).astype(np.float32)
+        margin = np.clip(best / _EVIDENCE_DEPTH_SCALE, 0.0, 1.0)
+        support = detected / float(len(bands))
+        return np.sqrt(margin * support).astype(np.float32)
+
     for r_idx, rule in enumerate(COMPOSITE_RULES):
         if rule["name"] in unsupported:
             continue
@@ -2005,18 +2302,29 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
         for sp in req:
             req_counts[sp] = req_counts.get(sp, 0) + 1
 
-        # All required species must be detected sufficient times
+        # All required species must be detected sufficient times, and must be
+        # measurable here at all: an indeterminate input decides nothing.
         all_met = np.ones(n_pixels, dtype=bool)
+        margins: list[np.ndarray] = []
         for sp, cnt in req_counts.items():
             thresh = _effective_threshold(sp, overrides)
             if cnt == 1:
                 all_met &= _species_detected(sp, thresh)
             else:
                 all_met &= (_species_n_detections(sp, thresh) >= cnt)
+            ok = _species_measurable_here(sp)
+            if ok is not None:
+                all_met &= ok
+            margins.append(_species_evidence(sp, thresh))
 
-        # Required absent species
+        # Required absent species. An exclusion that cannot be read is not a
+        # pass: the rule is withheld there, exactly as it is withheld when
+        # the sensor does not sample the exclusion's bands at all.
         for sp in rule.get("required_absent", []):
             all_met &= ~_species_detected(sp, _effective_threshold(sp, overrides))
+            ok = _species_measurable_here(sp)
+            if ok is not None:
+                all_met &= ok
 
         if not np.any(all_met):
             continue
@@ -2026,8 +2334,23 @@ def score_composites_numpy(depths: np.ndarray, wavelengths: np.ndarray,
         for sp in rule.get("bonus_species", []):
             bonus_count += _species_detected(sp, _effective_threshold(sp, overrides)).astype(np.float32)
 
+        # Calibrated confidence: the rule's base score is the ceiling, and
+        # the depth margin of its weakest required species decides how much
+        # of that ceiling this pixel earns. The geometric mean is used so one
+        # species sitting at its threshold pulls the whole match down without
+        # zeroing it, and so adding a required species cannot raise the
+        # score. A match that only just clears every threshold keeps
+        # _EVIDENCE_FLOOR of the base score; one well clear of all of them
+        # keeps all of it, before the bonus factor.
+        if margins:
+            evidence = np.exp(np.mean(np.log(np.maximum(
+                np.stack(margins), 1e-6)), axis=0)).astype(np.float32)
+        else:
+            evidence = np.ones(n_pixels, dtype=np.float32)
+        strength = _EVIDENCE_FLOOR + (1.0 - _EVIDENCE_FLOOR) * evidence
         bonus_factor = 1.0 + 0.05 * bonus_count
-        score = np.minimum(1.0, rule["base_score"] * bonus_factor).astype(np.float32)
+        score = np.minimum(
+            1.0, rule["base_score"] * strength * bonus_factor).astype(np.float32)
         scores[r_idx] = np.where(all_met, score, 0.0)
 
     return scores
@@ -2076,7 +2399,11 @@ def main(options, flags):
     input_map    = options['input']
     output_map   = options['output']
     conf_map     = options['confidence']
+    validity_map = options.get('validity') or ''
     min_depth    = float(options['min_band_depth'])
+    min_refl     = float(options.get('min_reflectance', '0.02') or '0.02')
+    max_refl     = float(options.get('max_reflectance', '1.2') or '1.2')
+    refl_scale   = float(options.get('reflectance_scale', '0') or '0')
     ndre_thresh  = float(options.get('ndre_threshold', '0.15') or '0.15')
     sand_albedo_thresh = float(options.get('sand_albedo_threshold', '0.25') or '0.25')
     species_percentile = float(options.get('species_percentile', '90') or '90')
@@ -2088,6 +2415,20 @@ def main(options, flags):
 
     # Collect band metadata
     bands = get_band_info(input_map, only_valid=only_valid)
+
+    # Absolute thresholds are expressed in 0-1 reflectance; the cube may be
+    # stored scaled. Resolve the scale once and convert the thresholds into
+    # the cube's own units, so every comparison below is in stored values.
+    if refl_scale <= 0:
+        refl_scale = _detect_reflectance_scale(input_map)
+        gs.message(f"Reflectance scale detected: {refl_scale:g} "
+                   f"(stored value / {refl_scale:g} = reflectance)")
+    else:
+        gs.verbose(f"Reflectance scale given: {refl_scale:g}")
+    min_refl_stored = min_refl * refl_scale
+    max_refl_stored = max_refl * refl_scale
+    sand_albedo_stored = sand_albedo_thresh * refl_scale
+
     wavelengths = np.array([b['wavelength'] for b in bands], dtype=np.float64)
     fwhms       = np.array([b['fwhm']       for b in bands], dtype=np.float64)
 
@@ -2164,13 +2505,15 @@ def main(options, flags):
         result = interpret_spectrum(
             spectrum, min_band_depth=min_depth, ndre=ndre,
             ndre_threshold=ndre_thresh,
-            wavelengths=np.array([c for c, _fw, _r in spectrum]))
+            wavelengths=np.array([c for c, _fw, _r in spectrum]),
+            min_reflectance=min_refl_stored)
         print_interpretation(result, verbose=verbose)
         return 0
 
     # ── Full-map mode ───────────────────────────────────────────────────────
-    if not output_map and not conf_map:
-        gs.fatal("Specify output= and/or confidence= for full-map mode.")
+    if not output_map and not conf_map and not validity_map:
+        gs.fatal("Specify output=, confidence= and/or validity= for "
+                 "full-map mode.")
 
     # Align the 3D computational region's depth window to the raster's own
     # native depth stack (bottom/top/tbres -- the caller's region may have
@@ -2213,11 +2556,37 @@ def main(options, flags):
     TARGET_CHUNK_PIXELS = 300_000
     chunk_rows = max(1, TARGET_CHUNK_PIXELS // ncols)
 
+    def _signal_quality(chunk: np.ndarray) -> tuple[np.ndarray, np.ndarray,
+                                                     np.ndarray]:
+        """Classify each pixel's readability: nodata, saturated, low signal.
+
+        A pixel whose whole spectrum is darker than min_reflectance carries
+        no usable absorption information at all, and one with a band above
+        max_reflectance has been clipped by the sensor or driven out of range
+        by the atmospheric correction (the white glass-fibre panel on the
+        C2RD scene reads 113 % at 550 nm and nodata through the SWIR). Both
+        are reported in the validity map and left unclassified, instead of
+        being passed off as an ordinary no-match.
+        """
+        nodata = np.all(np.isnan(chunk), axis=0)
+        with np.errstate(invalid='ignore'), warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            brightest = np.nanmax(chunk, axis=0)
+        saturated = np.isfinite(brightest) & (brightest > max_refl_stored) & ~nodata
+        low = (
+            np.isfinite(brightest) & (brightest < min_refl_stored) & ~nodata & ~saturated
+            if min_refl_stored > 0 else np.zeros_like(nodata)
+        )
+        return nodata, saturated, low
+
     class_map = np.zeros(n_pixels, dtype=np.int32)
     conf_arr = np.zeros(n_pixels, dtype=np.float32)
     nodata_mask = np.zeros(n_pixels, dtype=bool)
+    validity_arr = np.zeros(n_pixels, dtype=np.int32)
     n_ndre_screened = 0
     n_sand_fallback = 0
+    n_low_signal = 0
+    n_saturated = 0
 
     try:
         from grass.pygrass.raster import RasterRow
@@ -2287,7 +2656,9 @@ def main(options, flags):
                                                       margin=_CONTINUUM_MARGIN)
                 scores_chunk = score_composites_numpy(
                     depths_chunk, wavelengths, min_depth=min_depth,
-                    species_percentile_thresholds=species_pct_thresholds)
+                    species_percentile_thresholds=species_pct_thresholds,
+                    species_measurable=_species_measurable(
+                        chunk, sp_index, min_refl_stored))
 
                 # NDRE pre-screen: bar chlorophyll-dependent rules (vegetation,
                 # algae blooms) on pixels that don't actually look vegetated,
@@ -2306,9 +2677,12 @@ def main(options, flags):
                 cls[best_score < 0.1] = 0
                 conf = best_score.astype(np.float32)
 
-                nodata_chunk = np.all(np.isnan(chunk), axis=0)
-                cls[nodata_chunk] = 0
+                nodata_chunk, saturated_chunk, low_chunk = _signal_quality(chunk)
+                cls[nodata_chunk | saturated_chunk | low_chunk] = 0
                 conf[nodata_chunk] = np.nan
+                conf[saturated_chunk | low_chunk] = 0.0
+                n_saturated += int(saturated_chunk.sum())
+                n_low_signal += int(low_chunk.sum())
 
                 # Quartz/feldspar sand fallback: no diagnostic feature exists
                 # for these, so pixels left unclassified (no rule fired),
@@ -2316,8 +2690,9 @@ def main(options, flags):
                 # here by elimination rather than a positive species match.
                 broadband_chunk = _broadband_reflectance(chunk, bright_mask)
                 sand_fallback = (
-                    (cls == 0) & ~nodata_chunk & (ndre_chunk < ndre_thresh)
-                    & (broadband_chunk > sand_albedo_thresh)
+                    (cls == 0) & ~nodata_chunk & ~saturated_chunk & ~low_chunk
+                    & (ndre_chunk < ndre_thresh)
+                    & (broadband_chunk > sand_albedo_stored)
                 )
                 cls[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CLASS_IDX
                 conf[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CONFIDENCE
@@ -2325,9 +2700,17 @@ def main(options, flags):
 
                 pix_start = row_start * ncols
                 pix_end = row_end * ncols
+                validity_chunk = np.where(
+                    nodata_chunk, VALIDITY_NODATA,
+                    np.where(saturated_chunk, VALIDITY_SATURATED,
+                             np.where(low_chunk, VALIDITY_LOW_SIGNAL,
+                                      np.where(cls > 0, VALIDITY_CLASSIFIED,
+                                               VALIDITY_UNCLASSIFIED))))
+
                 class_map[pix_start:pix_end] = cls
                 conf_arr[pix_start:pix_end] = conf
                 nodata_mask[pix_start:pix_end] = nodata_chunk
+                validity_arr[pix_start:pix_end] = validity_chunk
 
                 del chunk, depths_chunk, scores_chunk
             gs.percent(n_chunks, n_chunks, 2)
@@ -2362,7 +2745,8 @@ def main(options, flags):
 
         scores = score_composites_numpy(
             depths, wavelengths, min_depth=min_depth,
-            species_percentile_thresholds=species_pct_thresholds)
+            species_percentile_thresholds=species_pct_thresholds,
+            species_measurable=_species_measurable(cube, sp_index, min_refl_stored))
 
         ndre_full = _safe_ndre(cube[nir_idx], cube[red_edge_idx])
         veg_blocked = ndre_full < ndre_thresh
@@ -2376,30 +2760,55 @@ def main(options, flags):
         class_map = (best_idx + 1).astype(np.int32)
         class_map[best_score < 0.1] = 0
         conf_arr = best_score.astype(np.float32)
-        nodata_mask = np.all(np.isnan(cube), axis=0)
-        class_map[nodata_mask] = 0
+        nodata_mask, saturated_full, low_full = _signal_quality(cube)
+        class_map[nodata_mask | saturated_full | low_full] = 0
         conf_arr[nodata_mask] = np.nan
+        conf_arr[saturated_full | low_full] = 0.0
+        n_saturated += int(saturated_full.sum())
+        n_low_signal += int(low_full.sum())
 
         broadband_full = _broadband_reflectance(cube, bright_mask)
         sand_fallback = (
-            (class_map == 0) & ~nodata_mask & (ndre_full < ndre_thresh)
-            & (broadband_full > sand_albedo_thresh)
+            (class_map == 0) & ~nodata_mask & ~saturated_full & ~low_full
+            & (ndre_full < ndre_thresh)
+            & (broadband_full > sand_albedo_stored)
         )
         class_map[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CLASS_IDX
         conf_arr[sand_fallback] = QUARTZOFELDSPATHIC_SAND_CONFIDENCE
         n_sand_fallback += int(sand_fallback.sum())
+
+        validity_arr = np.where(
+            nodata_mask, VALIDITY_NODATA,
+            np.where(saturated_full, VALIDITY_SATURATED,
+                     np.where(low_full, VALIDITY_LOW_SIGNAL,
+                              np.where(class_map > 0, VALIDITY_CLASSIFIED,
+                                       VALIDITY_UNCLASSIFIED)))).astype(np.int32)
 
         del cube, depths, scores
 
     class_map = class_map.reshape(nrows, ncols)
     conf_arr = conf_arr.reshape(nrows, ncols)
     nodata_mask = nodata_mask.reshape(nrows, ncols)
+    validity_arr = validity_arr.reshape(nrows, ncols)
 
     if n_ndre_screened:
         gs.message(
             f"NDRE pre-screen (threshold={ndre_thresh}): barred "
             f"{n_ndre_screened} pixel(s) from chlorophyll-dependent classes "
             f"({', '.join(sorted(_CHLOROPHYLL_GATED_RULE_NAMES))})"
+        )
+    if n_low_signal:
+        gs.message(
+            f"Low signal (all bands below {min_refl:g} reflectance, "
+            f"{min_refl_stored:g} stored): "
+            f"{n_low_signal} pixel(s) left unclassified; a band depth there "
+            f"would be a ratio of noise"
+        )
+    if n_saturated:
+        gs.message(
+            f"Saturated (a band above {max_refl:g} reflectance, "
+            f"{max_refl_stored:g} stored): "
+            f"{n_saturated} pixel(s) left unclassified"
         )
     if n_sand_fallback:
         gs.message(
@@ -2420,6 +2829,10 @@ def main(options, flags):
         if conf_map:
             gs.message(f"Writing confidence map → {conf_map}")
             _r3w.write_raster2d(_r3w.outpath(conf_map), conf_arr, _h)
+        if validity_map:
+            gs.message(f"Writing validity map → {validity_map}")
+            _r3w.write_raster2d(_r3w.outpath(validity_map),
+                                validity_arr.astype(np.float32), _h)
         _r3.close_cube(_h)
         return 0
 
@@ -2463,6 +2876,27 @@ def main(options, flags):
                            f"{QUARTZOFELDSPATHIC_SAND_CLASS_IDX}="
                            f"{QUARTZOFELDSPATHIC_SAND_LABEL} (elimination-based "
                            f"fallback, not a composite rule). Input: {input_map}"))
+
+    if validity_map:
+        gs.message(f"Writing validity map → {validity_map}")
+        _write_raster(validity_map, validity_arr, 'int', VALIDITY_NODATA)
+        cats = "\n".join(f"{code}:{label}"
+                          for code, label in sorted(VALIDITY_LABELS.items()))
+        gs.write_command('r.category', map=validity_map,
+                         rules='-', separator=':', stdin=cats, quiet=True)
+        gs.run_command('r.support', map=validity_map,
+                       title="Spectral interpretation - per-pixel validity",
+                       units="validity code",
+                       description=(
+                           f"i.hyper.spectroscopy validity map. "
+                           f"{VALIDITY_CLASSIFIED}=classified, "
+                           f"{VALIDITY_UNCLASSIFIED}=unclassified (readable, "
+                           f"no rule fired), {VALIDITY_LOW_SIGNAL}=low signal "
+                           f"(every band below {min_refl:g} reflectance), "
+                           f"{VALIDITY_SATURATED}=saturated (a band above "
+                           f"{max_refl:g}); NULL where the cube has no data. "
+                           f"Input: {input_map}"))
+        gs.raster_history(validity_map, overwrite=True)
 
     if conf_map:
         gs.message(f"Writing confidence map → {conf_map}")

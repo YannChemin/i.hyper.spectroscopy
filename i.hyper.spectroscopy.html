@@ -162,22 +162,107 @@ using this module.</p>
 
 <h3>Band depth computation</h3>
 
-<p>Band depth for band <em>i</em> at wavelength λ<sub>i</sub> is:</p>
+<p>Band depth for band <i>i</i> at wavelength &lambda;<sub>i</sub> is:</p>
 
-<div class="code"><pre>depth_i = max(0, 1 − R_i / max(R_j  ∀j where |λ_j − λ_i| &lt; 150 nm, j ≠ i))</pre></div>
+<pre>
+depth_i = max(0, 1 - R_i / max(R_j  for all j where |lambda_j - lambda_i| &lt; 150 nm,
+                               j != i, and j in the same coverage segment))
+</pre>
 
-<p>The continuum is the brightest neighbouring band within the ±150 nm window.
-When no neighbour exists, continuum = 1.0.  Bands with
-<code>depth &lt; min_band_depth</code> are not counted as absorbed.</p>
+<p>The continuum is the brightest neighbouring band within the &plusmn;150 nm
+window <b>that the sensor actually measured next to the feature</b>. Most
+airborne and drone products drop the two water-vapour windows, and a plain
+distance window then reaches across the hole and takes the continuum from the
+far side, which is not a shoulder of the feature at all. On an EMIT cube the
+gap at 1320-1439 nm is only 119 nm wide, so 10 of 244 bands were affected,
+and the five bands carrying the 1400-1500 nm water feature read a depth of
+about 0.62 instead of 0.41.</p>
 
-<table border="1" cellpadding="4" cellspacing="0">
-  <tr><th>depth</th><th>Interpretation</th></tr>
-  <tr><td>0.00</td><td>No absorption</td></tr>
-  <tr><td>0.01–0.03</td><td>Trace / below detection</td></tr>
-  <tr><td>0.03–0.10</td><td>Detectable — default threshold 0.02</td></tr>
-  <tr><td>0.10–0.30</td><td>Moderate; most composite rules activate here</td></tr>
-  <tr><td>&gt; 0.30</td><td>Strong; nearly pure mineral or dense canopy</td></tr>
+<p>A gap is detected relative to the sensor's own sampling: a spacing above
+<tt>max(50 nm, 5 &times; median spacing)</tt>. That keeps a coarse
+multispectral sensor, where 60 nm between bands is normal, in a single
+segment, while still splitting a 5 nm imaging spectrometer at a 150 nm
+hole.</p>
+
+<p>A band with no neighbour inside its own segment has no continuum and
+therefore <b>no measurable depth</b>: it reports NaN in full-map mode and 0 in
+point mode, not the <tt>1 - R</tt> that a default continuum of 1.0 used to
+produce. That default invented a deep absorption at every isolated band, and
+the deeper the darker the surface.</p>
+
+<p>Typical thresholds:</p>
+
+<table border="1">
+<tr><th>depth</th><th>Interpretation</th></tr>
+<tr><td>0.00</td><td>No absorption</td></tr>
+<tr><td>0.01-0.03</td><td>Trace / below detection</td></tr>
+<tr><td>0.03-0.10</td><td>Detectable &mdash; default threshold 0.02</td></tr>
+<tr><td>0.10-0.30</td><td>Moderate; most composite rules activate here</td></tr>
+<tr><td>&gt; 0.30</td><td>Strong; nearly pure mineral or dense canopy</td></tr>
 </table>
+
+<h3>Storage scale of the reflectance values</h3>
+
+<p>Band depth is a ratio, so the feature detection does not care whether the
+cube holds 0-1 reflectance or reflectance scaled by 10000, as
+surface-reflectance products commonly do. The <b>absolute</b> thresholds do
+care: <b>min_reflectance</b>, <b>max_reflectance</b> and
+<b>sand_albedo_threshold</b> are all expressed in 0-1 reflectance.</p>
+
+<p><b>reflectance_scale=</b> is the divisor that converts stored values to
+reflectance. With the default <tt>0</tt> it is read from the cube's own value
+range and reported:</p>
+
+<pre>
+Reflectance scale detected: 10000 (stored value / 10000 = reflectance)
+</pre>
+
+<p>Detection picks 1, 100, 1000 or 10000 from the cube's maximum. Give the
+value explicitly for a cube whose range does not reveal it &mdash; a scene
+that happens to be entirely dark, for instance.</p>
+
+<p>Note for existing command lines: before this, the absolute thresholds were
+compared against the stored values directly, so working on a cube scaled by
+10000 meant passing <tt>sand_albedo_threshold=2500</tt> to mean 0.25. That
+value now means a reflectance of 2500 and will never be reached. Pass
+<tt>0.25</tt>.</p>
+
+<h3>Detected, absent, or indeterminate</h3>
+
+<p>Band depth is a ratio, so it says nothing about the absolute size of the
+dip. On a surface reflecting 2 % in the SWIR, a depth of 0.3 is a reflectance
+difference of 0.006, at or below the noise of an atmospherically corrected
+imaging spectrometer. Measured on the C2RD Pourri&egrave;res ground targets,
+every apparent polyamide detection &mdash; N-H 1535 nm and amide 2049 nm
+depths of 0.12 to 0.31 &mdash; came from a surface below 0.07 SWIR
+reflectance, and the apparent depth tracked darkness rather than material.</p>
+
+<p>A species whose own bands are all darker than <b>min_reflectance</b> is
+therefore reported as <b>indeterminate</b>: neither detected nor absent. No
+rule that needs that species, as a required or as a required-absent species,
+is scored at such a pixel. Treating "unreadable" as "absent" is the same
+mistake as treating an unsampled exclusion as a pass, and it has the same
+consequence: the rule fires on exactly the surface that cannot support it.
+With the default 0.02 this removes the open-water false positives on the C2RD
+scene; raise it towards 0.07 for work on dark targets.</p>
+
+<p><b>validity=</b> writes the per-pixel outcome, which the class map alone
+cannot express:</p>
+
+<table border="1">
+<tr><th>code</th><th>meaning</th></tr>
+<tr><td>NULL</td><td>the cube has no data here</td></tr>
+<tr><td>1</td><td>classified</td></tr>
+<tr><td>2</td><td>unclassified &mdash; readable, but no rule fired</td></tr>
+<tr><td>3</td><td>low signal &mdash; every band below <b>min_reflectance</b></td></tr>
+<tr><td>4</td><td>saturated &mdash; a band above <b>max_reflectance</b></td></tr>
+</table>
+
+<p>Low-signal and saturated pixels are left unclassified rather than passed
+off as an ordinary no-match. On the C2RD scene the white glass-fibre panel
+reads 113 % reflectance at 550 nm with no data through the SWIR, and came out
+of earlier runs merely "unclassified", indistinguishable from a confident
+negative.</p>
 
 <h3>Sensor band coverage</h3>
 
@@ -217,14 +302,51 @@ so cannot separate water from vegetation.</p>
 
 <h3>Composite scoring</h3>
 
-<p>Each composite rule defines a <code>base_score</code> (0–1) and lists of
-required and optional bonus species.  When all required species are detected:</p>
+<p>Each composite rule defines a <tt>base_score</tt> (0-1) and a list of
+required species and optional bonus species. A rule is scored at a pixel when
+every required species is detected, no <tt>required_absent</tt> species is
+detected, and every species the rule names is both sampled by this sensor and
+measurable here. The reported confidence is then:</p>
 
-<div class="code"><pre>score = min(1.0, base_score × (1.0 + 0.05 × bonus_count))</pre></div>
+<pre>
+evidence_sp = sqrt(depth_margin_sp * band_support_sp)
+evidence    = geometric mean over required species of evidence_sp
+strength    = 0.55 + 0.45 * evidence
+score       = min(1.0, base_score * strength * (1.0 + 0.05 * bonus_count))
+</pre>
 
-<p>where <code>bonus_count</code> is the number of bonus species also detected.
-Rules with <code>required_absent</code> species fail if any of those species
-are detected at the pixel.</p>
+<ul>
+<li><tt>depth_margin_sp</tt> is how far the species' deepest band clears its
+own threshold, scaled over 0.20 of extra depth and clipped to [0, 1]</li>
+<li><tt>band_support_sp</tt> is the fraction of that species' sampled bands
+which cleared the threshold</li>
+<li><tt>bonus_count</tt> is the number of bonus species also detected</li>
+</ul>
+
+<p>The <tt>base_score</tt> is therefore a ceiling that says how diagnostic the
+rule is when it fires, and the pixel's own evidence decides how much of that
+ceiling it earns. A match that only just clears every threshold keeps 55 % of
+the base score; one well clear of all of them keeps all of it. Before this,
+the confidence was <tt>base_score &times; bonus_factor</tt> and carried no
+information about fit at all, which is how a strict run on the C2RD scene
+could report a mean confidence of 0.99 over what was a degenerate two-way
+split.</p>
+
+<p>The two components are deliberately independent: a single band scraping
+over the threshold while its neighbours stay flat is a spike, whereas the same
+depth across six of eight bands is an absorption band, and the geometric mean
+requires both. Using the geometric mean across required species means one
+species sitting at its threshold pulls the whole match down without zeroing
+it, and adding a required species to a rule can never raise its score.</p>
+
+<p><b>Confidence is not a correctness probability.</b> It measures how well
+the pixel fits the rule that was applied, which cannot detect a rule that is
+not diagnostic in the first place. On the C2RD scene the surviving
+misclassifications &mdash; a red roof, an orange court floor and a windsock
+all read as <tt>phycoerythrin_algae</tt> &mdash; have genuinely deep features
+in the windows the rule tests, and score high for that reason. Confidence
+calibration narrows what a score means; it does not substitute for rule
+specificity.</p>
 
 <h3>Band slice extraction</h3>
 
@@ -247,6 +369,20 @@ atmospheric correction.</p>
 species (carbonate CO<sub>3</sub>, CH hydrocarbon, Mg-OH) are matched, a
 disambiguation warning is issued.  Use FWHM as a discriminant: narrow features
 (&lt; 30 nm) indicate organic CH, broad features (&gt; 80 nm) indicate minerals.</p>
+
+<h3>Point mode output</h3>
+
+<p>In point mode (<b>-p</b>), the interpretation report is written to the
+console via <tt>gs.message()</tt>. The report lists:</p>
+
+<ul>
+<li>Dominant class and confidence</li>
+<li>All detected features above the depth threshold</li>
+<li>Chromophore assignments ranked by confidence</li>
+<li>Ranked material hypotheses (top 8 by default, all with <b>-v</b>)</li>
+<li>Any flag notes (atmospheric and overlap warnings, rules disabled for this
+sensor, species reported as indeterminate)</li>
+</ul>
 
 <h3>Flags</h3>
 

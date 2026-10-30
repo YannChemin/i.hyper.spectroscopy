@@ -147,12 +147,29 @@ correction (e.g., *i.hyper.atcorr* or *i.hyper.smac*) before using this module.
 Band depth for band *i* at wavelength λ_i is:
 
 ```
-depth_i = max(0, 1 − R_i / max(R_j  ∀j where |λ_j − λ_i| < 150 nm, j ≠ i))
+depth_i = max(0, 1 − R_i / max(R_j  ∀j where |λ_j − λ_i| < 150 nm,
+                                 j ≠ i, and j in the same coverage segment))
 ```
 
-The continuum is the brightest neighbouring band within the ±150 nm window.
-When no neighbour exists (isolated band), continuum = 1.0.  Bands with
-`depth < min_band_depth` are not counted as absorbed.
+The continuum is the brightest neighbouring band within the ±150 nm window
+**that the sensor actually measured next to the feature**. Most airborne and
+drone products drop the two water-vapour windows, and a plain distance window
+then reaches across the hole and takes the continuum from the far side, which
+is not a shoulder of the feature at all. On an EMIT cube the gap at
+1320-1439 nm is only 119 nm wide, so 10 of 244 bands were affected, and the
+five bands carrying the 1400-1500 nm water feature read a depth of about 0.62
+instead of 0.41.
+
+A gap is detected relative to the sensor's own sampling: a spacing above
+`max(50 nm, 5 × median spacing)`. That keeps a coarse multispectral sensor,
+where 60 nm between bands is normal, in a single segment, while still
+splitting a 5 nm imaging spectrometer at a 150 nm hole.
+
+A band with no neighbour inside its own segment has no continuum and
+therefore **no measurable depth**: it reports NaN in full-map mode and 0 in
+point mode, not the `1 − R` that a default continuum of 1.0 used to produce.
+That default invented a deep absorption at every isolated band, and the
+deeper the darker the surface.
 
 Typical thresholds:
 
@@ -163,6 +180,67 @@ Typical thresholds:
 | 0.03–0.10 | Detectable — default threshold 0.02 |
 | 0.10–0.30 | Moderate; most composite rules activate here |
 | > 0.30 | Strong; nearly pure mineral or dense canopy |
+
+### Storage scale of the reflectance values
+
+Band depth is a ratio, so the feature detection does not care whether the cube
+holds 0–1 reflectance or reflectance scaled by 10000, as surface-reflectance
+products commonly do. The **absolute** thresholds do care:
+**min_reflectance**, **max_reflectance** and **sand_albedo_threshold** are all
+expressed in 0–1 reflectance.
+
+**reflectance_scale=** is the divisor that converts stored values to
+reflectance. With the default `0` it is read from the cube's own value range
+and reported:
+
+```
+Reflectance scale detected: 10000 (stored value / 10000 = reflectance)
+```
+
+Detection picks 1, 100, 1000 or 10000 from the cube's maximum. Give the value
+explicitly for a cube whose range does not reveal it — a scene that happens to
+be entirely dark, for instance.
+
+Note for existing command lines: before this, the absolute thresholds were
+compared against the stored values directly, so working on a cube scaled by
+10000 meant passing `sand_albedo_threshold=2500` to mean 0.25. That value now
+means a reflectance of 2500 and will never be reached. Pass `0.25`.
+
+### Detected, absent, or indeterminate
+
+Band depth is a ratio, so it says nothing about the absolute size of the dip.
+On a surface reflecting 2 % in the SWIR, a depth of 0.3 is a reflectance
+difference of 0.006, at or below the noise of an atmospherically corrected
+imaging spectrometer. Measured on the C2RD Pourrières ground targets, every
+apparent polyamide detection — N-H 1535 nm and amide 2049 nm depths of
+0.12 to 0.31 — came from a surface below 0.07 SWIR reflectance, and the
+apparent depth tracked darkness rather than material.
+
+A species whose own bands are all darker than **min_reflectance** is
+therefore reported as **indeterminate**: neither detected nor absent. No rule
+that needs that species, as a required or as a required-absent species, is
+scored at such a pixel. Treating "unreadable" as "absent" is the same mistake
+as treating an unsampled exclusion as a pass, and it has the same
+consequence: the rule fires on exactly the surface that cannot support it.
+With the default 0.02 this removes the open-water false positives on the
+C2RD scene; raise it towards 0.07 for work on dark targets.
+
+**validity=** writes the per-pixel outcome, which the class map alone cannot
+express:
+
+| code | meaning |
+|---|---|
+| NULL | the cube has no data here |
+| 1 | classified |
+| 2 | unclassified — readable, but no rule fired |
+| 3 | low signal — every band below **min_reflectance** |
+| 4 | saturated — a band above **max_reflectance** |
+
+Low-signal and saturated pixels are left unclassified rather than passed off
+as an ordinary no-match. On the C2RD scene the white glass-fibre panel reads
+113 % reflectance at 550 nm with no data through the SWIR, and came out of
+earlier runs merely "unclassified", indistinguishable from a confident
+negative.
 
 ### Sensor band coverage
 
@@ -179,7 +257,7 @@ required species, or none of the bands of one of its **required-absent**
 species.  The second case matters more than it looks: an exclusion that cannot
 be tested would otherwise pass everywhere, turning a veto into a no-op and
 letting the rule fire on exactly the material it was written to reject.  Such
-a rule is dropped rather than silently relaxed.
+a rule is disabled rather than silently relaxed.
 
 A band window counts as sampled only when a band falls near its nominal
 centre, not merely somewhere inside the window.  Without that test a sensor
@@ -203,15 +281,46 @@ vegetation.
 ### Composite scoring
 
 Each composite rule defines a `base_score` (0–1) and a list of required
-species and optional bonus species.  When all required species are detected:
+species and optional bonus species.  A rule is scored at a pixel when every
+required species is detected, no `required_absent` species is detected, and
+every species the rule names is both sampled by this sensor and measurable
+here. The reported confidence is then:
 
 ```
-score = min(1.0, base_score × (1.0 + 0.05 × bonus_count))
+evidence_sp = sqrt(depth_margin_sp × band_support_sp)
+evidence    = geometric mean over required species of evidence_sp
+strength    = 0.55 + 0.45 × evidence
+score       = min(1.0, base_score × strength × (1.0 + 0.05 × bonus_count))
 ```
 
-where `bonus_count` is the number of bonus species that are also detected.
-Rules with `required_absent` species fail if any of those species are
-detected at the pixel.
+- `depth_margin_sp` is how far the species' deepest band clears its own
+  threshold, scaled over 0.20 of extra depth and clipped to [0, 1]
+- `band_support_sp` is the fraction of that species' sampled bands which
+  cleared the threshold
+- `bonus_count` is the number of bonus species also detected
+
+The `base_score` is therefore a ceiling that says how diagnostic the rule is
+when it fires, and the pixel's own evidence decides how much of that ceiling
+it earns. A match that only just clears every threshold keeps 55 % of the
+base score; one well clear of all of them keeps all of it. Before this, the
+confidence was `base_score × bonus_factor` and carried no information about
+fit at all, which is how a strict run on the C2RD scene could report a mean
+confidence of 0.99 over what was a degenerate two-way split.
+
+The two components are deliberately independent: a single band scraping over
+the threshold while its neighbours stay flat is a spike, whereas the same
+depth across six of eight bands is an absorption band, and the geometric mean
+requires both. Using the geometric mean across required species means one
+species sitting at its threshold pulls the whole match down without zeroing
+it, and adding a required species to a rule can never raise its score.
+
+**Confidence is not a correctness probability.** It measures how well the
+pixel fits the rule that was applied, which cannot detect a rule that is not
+diagnostic in the first place. On the C2RD scene the surviving
+misclassifications — a red roof, an orange court floor and a windsock all
+read as `phycoerythrin_algae` — have genuinely deep features in the windows
+the rule tests, and score high for that reason. Confidence calibration
+narrows what a score means; it does not substitute for rule specificity.
 
 ### Band slice extraction
 
@@ -256,8 +365,10 @@ any raster data.  Use this first to verify sensor coverage and metadata
 completeness.
 
 The **-p** flag activates point mode.  A `coordinates=east,north` value is
-required.  The spectrum at the specified location is extracted (one call to
-`r.what` per band) and the full interpretation engine runs on that single pixel.
+required.  The spectrum at the specified location is read with a single
+*r3.what* call and the full interpretation engine runs on that one pixel.
+Extracting a 2D raster per band to read one pixel costs minutes on a large
+cube; the per-band path is kept only as a fallback.
 
 The **-v** flag prints the full hypothesis ranking in point mode.  Without
 `-v`, only the top 8 hypotheses are shown.

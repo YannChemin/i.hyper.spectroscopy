@@ -34,6 +34,10 @@ COMPOSITE_RULES      = _mod.COMPOSITE_RULES
 CLASS_LABELS         = _mod.CLASS_LABELS
 AbsorptionFeature    = _mod.AbsorptionFeature
 _entry_is_sampled    = _mod._entry_is_sampled
+_spectral_segments   = _mod._spectral_segments
+_species_measurable  = _mod._species_measurable
+_EVIDENCE_FLOOR      = _mod._EVIDENCE_FLOOR
+_EVIDENCE_DEPTH_SCALE = _mod._EVIDENCE_DEPTH_SCALE
 _species_sampled     = _mod._species_sampled
 unsupported_rules    = _mod.unsupported_rules
 
@@ -108,10 +112,33 @@ class TestBandDepth:
         assert abs(depth - 1.0) < 1e-9
 
     def test_no_neighbors_within_margin(self):
-        # All other bands > 150nm away → continuum defaults to 1.0
+        # All other bands > 150nm away, so the feature has no shoulder and no
+        # measurable depth. This must report 0, not the 1 - R that a default
+        # continuum of 1.0 used to produce: for a dark surface that is a deep
+        # absorption which does not exist.
         depth = _band_depth(0.5, 700.0, [400.0, 700.0, 1000.0], [0.9, 0.5, 0.9])
-        # |400-700|=300 > 150, |1000-700|=300 > 150 → no neighbors
-        assert abs(depth - 0.5) < 1e-9  # 1 - 0.5/1.0
+        assert depth == 0.0
+
+    def test_continuum_not_taken_across_a_gap(self):
+        # 5 nm sampling either side of a 200 nm hole, as in a cube with the
+        # water-vapour windows removed. The band at 1784 nm must not use the
+        # 1984 nm band as its shoulder.
+        centers = [1774.0, 1779.0, 1784.0, 1984.0, 1989.0, 1994.0]
+        refl = [0.40, 0.40, 0.20, 0.90, 0.90, 0.90]
+        depth = _band_depth(0.20, 1784.0, centers, refl)
+        # Continuum from its own segment only: max(0.40, 0.40) = 0.40.
+        assert abs(depth - 0.5) < 1e-9
+
+    def test_depth_uses_own_segment_when_gap_is_nearer(self):
+        # The far side of the gap is closer in nm than the near shoulder, so
+        # a plain distance window would pick it; the segment test must win.
+        centers = [1600.0, 1784.0, 1800.0]
+        refl = [0.50, 0.25, 0.95]
+        depth = _band_depth(0.25, 1784.0, centers, refl)
+        # 1600 and 1800 are both within 150 nm, but median spacing is 100 nm
+        # so threshold is 500 nm and there is no gap here: both qualify and
+        # the continuum is the brighter, 0.95.
+        assert abs(depth - (1.0 - 0.25 / 0.95)) < 1e-9
 
     def test_feature_equal_to_continuum_gives_zero(self):
         # Feature reflectance matches the continuum → depth = 0
@@ -338,13 +365,36 @@ class TestComputeDepthsNumpy:
         assert depths[2, 1] == 0.0
 
     def test_no_neighbors_within_margin(self):
-        # Bands far apart (>150nm) → no neighbors → local_max = 1.0
+        # Bands > 150nm apart: no band has a shoulder, so no depth is
+        # measurable anywhere. NaN, not the old 1 - R from a default
+        # continuum of 1.0, which invented an absorption at every band.
         wl = np.array([500., 700., 900.])
         cube = np.array([[0.9], [0.5], [0.9]])  # dip at 700nm
         depths = _compute_depths_numpy(cube, wl)
-        # 700nm: |700-500|=200 > 150, |700-900|=200 > 150 → no neighbors
-        # local_max = 1.0 → depth = 1 - 0.5 = 0.5
-        assert abs(depths[1, 0] - 0.5) < 1e-9
+        assert np.all(np.isnan(depths))
+
+    def test_continuum_not_taken_across_a_gap(self):
+        # 5 nm sampling either side of a 200 nm hole. The dip at 1784 nm must
+        # take its continuum from 1774/1779, not from the bright 1984 band.
+        wl = np.array([1774., 1779., 1784., 1984., 1989., 1994.])
+        cube = np.array([[0.40], [0.40], [0.20], [0.90], [0.90], [0.90]])
+        depths = _compute_depths_numpy(cube, wl)
+        assert abs(depths[2, 0] - 0.5) < 1e-9, (
+            f"expected 1 - 0.20/0.40 = 0.5, got {depths[2, 0]:.4f}"
+        )
+        # And the bright side must not read as an absorption at all.
+        assert depths[3, 0] == 0.0
+
+    def test_unmeasurable_band_is_nan_not_a_detection(self):
+        # One band isolated in its own segment, the rest contiguous.
+        wl = np.array([600., 605., 610., 615., 2400.])
+        cube = np.full((5, 1), 0.50)
+        cube[4, 0] = 0.05  # very dark isolated band
+        depths = _compute_depths_numpy(cube, wl)
+        assert np.isnan(depths[4, 0]), (
+            "an isolated dark band must not report a depth"
+        )
+        assert not np.nanmax(depths[:4, 0]) > 0.0
 
     def test_nan_handling(self):
         wl = np.array([600., 650., 700., 750., 800.])
@@ -525,10 +575,16 @@ class TestNewMaterialClasses:
 
     def test_ferrihydrite_doublet(self):
         # ferrihydrite @ 430nm (400-465) + 750nm (700-810)
+        # Continuum anchors sit within 150 nm of each diagnostic band, so
+        # each feature has a real shoulder. Without them the bands are
+        # isolated and have no measurable depth at all.
         triplets = [
             (430, 80, 0.10),   # ferrihydrite broad Fe3+
+            (520, 20, 0.50),   # continuum
             (600, 20, 0.50),   # continuum
+            (680, 20, 0.50),   # continuum
             (750, 80, 0.25),   # ferrihydrite 2nd feature
+            (860, 20, 0.55),   # continuum
             (900, 20, 0.55),   # continuum
         ]
         result = interpret_spectrum(triplets)
@@ -587,6 +643,7 @@ class TestNewMaterialClasses:
         # Discrimination: Fe3+ 440nm band is present in crocidolite, absent in chrysotile
         triplets_croc = [
             (440, 60, 0.25),   # crocidolite Fe3+ broad (absent in chrysotile)
+            (530, 20, 0.70),   # continuum, within 150 nm of the 440 band
             (600, 20, 0.70),   # continuum
             (2200, 20, 0.70),  # continuum
             (2320, 35, 0.42),  # crocidolite Fe-OH
@@ -606,8 +663,11 @@ class TestNewMaterialClasses:
         # ferrihydrite (both bands) + jarosite @ 2265nm (2250-2285)
         triplets = [
             (430, 80, 0.08),   # ferrihydrite Fe3+
+            (520, 20, 0.40),   # continuum, within 150 nm of the 430 band
             (600, 20, 0.40),   # continuum
+            (680, 20, 0.40),   # continuum
             (750, 80, 0.18),   # ferrihydrite 2nd
+            (860, 20, 0.42),   # continuum
             (900, 20, 0.42),   # continuum
             (2200, 20, 0.42),  # continuum
             (2265, 30, 0.28),  # jarosite Fe-OH
@@ -749,3 +809,164 @@ class TestUnsupportedRules:
         wl = np.array([2122.0, 2245.0])
         reason = unsupported_rules(wl)["camouflage_polymer_sheet_field"]
         assert "water_body_OH_exclusion" in reason
+
+
+# ===========================================================================
+# 10. Spectral coverage segments
+# ===========================================================================
+
+class TestSpectralSegments:
+    def test_contiguous_grid_is_one_segment(self):
+        wl = np.arange(400.0, 2500.0, 5.0)
+        assert _spectral_segments(wl).max() == 0
+
+    def test_c2rd_mosaic_splits_into_three(self):
+        wl = np.concatenate([
+            np.arange(411.4, 1329.1, 5.1),
+            np.arange(1482.6, 1784.6, 5.1),
+            np.arange(1984.0, 2449.7, 5.1),
+        ])
+        seg = _spectral_segments(wl)
+        assert seg.max() == 2, f"expected 3 segments, got {seg.max() + 1}"
+        # The split happens exactly at the two water-vapour windows.
+        edges = wl[np.flatnonzero(np.diff(seg)) ]
+        assert abs(edges[0] - 1324.0) < 6.0
+        assert abs(edges[1] - 1779.5) < 6.0
+
+    def test_coarse_multispectral_stays_one_segment(self):
+        # 60 nm between bands is normal for a multispectral sensor and must
+        # not be read as a gap, or every band would lose its continuum.
+        wl = np.arange(450.0, 2400.0, 60.0)
+        assert _spectral_segments(wl).max() == 0
+
+    def test_single_band(self):
+        assert _spectral_segments(np.array([700.0])).tolist() == [0]
+
+    def test_empty(self):
+        assert _spectral_segments(np.array([])).size == 0
+
+
+# ===========================================================================
+# 11. Indeterminate species (three-valued logic)
+# ===========================================================================
+
+_VEG_WL = np.array([430., 550., 680., 710., 800.])
+
+
+def _veg_cube(scale=1.0):
+    """A vegetation-shaped spectrum, optionally scaled darker."""
+    cube = np.zeros((5, 1), dtype=np.float64)
+    cube[:, 0] = np.array([0.03, 0.15, 0.03, 0.08, 0.40]) * scale
+    return cube
+
+
+class TestSpeciesMeasurable:
+    def test_bright_species_is_measurable(self):
+        idx = _build_band_species_index(_VEG_WL)
+        ok = _species_measurable(_veg_cube(), idx, 0.02)
+        assert ok["chlorophyll_a+b"][0]
+
+    def test_dark_species_is_not_measurable(self):
+        # The same shape at a hundredth of the brightness: identical band
+        # depths, but the dips are now smaller than any sensor's noise.
+        idx = _build_band_species_index(_VEG_WL)
+        ok = _species_measurable(_veg_cube(0.01), idx, 0.02)
+        assert not ok["chlorophyll_a+b"][0]
+
+    def test_disabled_by_zero_threshold(self):
+        idx = _build_band_species_index(_VEG_WL)
+        assert _species_measurable(_veg_cube(0.01), idx, 0.0) == {}
+
+    def test_depths_are_identical_so_only_the_guard_can_tell(self):
+        bright = _compute_depths_numpy(_veg_cube(), _VEG_WL)
+        dark = _compute_depths_numpy(_veg_cube(0.01), _VEG_WL)
+        np.testing.assert_allclose(bright, dark, atol=1e-9)
+
+
+class TestIndeterminateBlocksRules:
+    def _score(self, cube, min_reflectance):
+        depths = _compute_depths_numpy(cube, _VEG_WL)
+        idx = _build_band_species_index(_VEG_WL)
+        return score_composites_numpy(
+            depths, _VEG_WL,
+            species_measurable=_species_measurable(cube, idx, min_reflectance))
+
+    def test_bright_pixel_fires(self):
+        gv = next(i for i, r in enumerate(COMPOSITE_RULES)
+                  if r["name"] == "green_vegetation")
+        assert self._score(_veg_cube(), 0.02)[gv, 0] > 0.0
+
+    def test_dark_pixel_withheld(self):
+        gv = next(i for i, r in enumerate(COMPOSITE_RULES)
+                  if r["name"] == "green_vegetation")
+        assert self._score(_veg_cube(0.01), 0.02)[gv, 0] == 0.0, (
+            "a rule must not fire where its own species is unreadable"
+        )
+
+    def test_without_the_guard_the_dark_pixel_still_fires(self):
+        # Shows the guard is what makes the difference, not the depths.
+        gv = next(i for i, r in enumerate(COMPOSITE_RULES)
+                  if r["name"] == "green_vegetation")
+        assert self._score(_veg_cube(0.01), 0.0)[gv, 0] > 0.0
+
+
+class TestValidityCodes:
+    def test_codes_are_distinct_and_labelled(self):
+        codes = [_mod.VALIDITY_NODATA, _mod.VALIDITY_CLASSIFIED,
+                 _mod.VALIDITY_UNCLASSIFIED, _mod.VALIDITY_LOW_SIGNAL,
+                 _mod.VALIDITY_SATURATED]
+        assert len(set(codes)) == len(codes)
+        assert _mod.VALIDITY_NODATA not in _mod.VALIDITY_LABELS
+        for c in codes[1:]:
+            assert c in _mod.VALIDITY_LABELS
+
+
+# ===========================================================================
+# 12. Calibrated confidence
+# ===========================================================================
+
+class TestCalibratedConfidence:
+    def _gv_score(self, cube):
+        depths = _compute_depths_numpy(cube, _VEG_WL)
+        scores = score_composites_numpy(depths, _VEG_WL)
+        gv = next(i for i, r in enumerate(COMPOSITE_RULES)
+                  if r["name"] == "green_vegetation")
+        return scores[gv, 0]
+
+    def test_deeper_features_score_higher(self):
+        shallow = np.zeros((5, 1)); shallow[:, 0] = [0.37, 0.39, 0.37, 0.38, 0.40]
+        deep = np.zeros((5, 1)); deep[:, 0] = [0.03, 0.15, 0.03, 0.08, 0.40]
+        s, d = self._gv_score(shallow), self._gv_score(deep)
+        assert 0.0 < s < d, f"shallow {s:.3f} should be below deep {d:.3f}"
+
+    def test_a_threshold_grazing_match_is_not_reported_as_certain(self):
+        # Dips just over the 0.02 default floor: the rule fires, but the
+        # confidence must stay near the evidence floor, not at base_score.
+        cube = np.zeros((5, 1))
+        cube[:, 0] = [0.3912, 0.40, 0.3912, 0.3912, 0.40]
+        s = self._gv_score(cube)
+        base = next(r["base_score"] for r in COMPOSITE_RULES
+                    if r["name"] == "green_vegetation")
+        assert 0.0 < s < base * 0.75, (
+            f"grazing match scored {s:.3f}, too close to base {base}"
+        )
+
+    def test_confidence_never_exceeds_one(self):
+        wl = np.linspace(400, 2500, 50)
+        rng = np.random.default_rng(1)
+        cube = rng.uniform(0.0, 1.0, (50, 200))
+        depths = _compute_depths_numpy(cube, wl)
+        scores = score_composites_numpy(depths, wl)
+        assert np.all(scores <= 1.0) and np.all(scores >= 0.0)
+
+    def test_point_mode_confidence_rises_with_depth(self):
+        shallow = _make_spectrum([430, 550, 680, 710, 800], 0.40,
+                                 {430: 0.36, 680: 0.36, 710: 0.37})
+        deep = _make_spectrum([430, 550, 680, 710, 800], 0.40,
+                              {430: 0.05, 680: 0.05, 710: 0.12})
+        cs = [h.confidence for h in interpret_spectrum(shallow).hypotheses
+              if h.name == "green_vegetation"]
+        cd = [h.confidence for h in interpret_spectrum(deep).hypotheses
+              if h.name == "green_vegetation"]
+        assert cs and cd, "green_vegetation should fire in both"
+        assert cs[0] < cd[0], f"{cs[0]:.3f} should be below {cd[0]:.3f}"
