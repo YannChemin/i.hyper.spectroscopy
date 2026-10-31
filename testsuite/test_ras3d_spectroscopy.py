@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from test_ras3d_common import (
     WYVERN_PATH, TANAGER_PATH,
     skip_without_ras3d, skip_without_wyvern, skip_without_tanager,
-    open_cube_checked, assert_band_valid, install_ras3d_shim, make_wl_sidecar,
+    open_cube_checked, assert_band_valid, install_ras3d_shim, make_wl_sidecar, load_addon
 )
 
 
@@ -78,9 +78,7 @@ def test_wavelength_sidecar():
     h, r = open_cube_checked(WYVERN_PATH)
     sidecar, wl_expected = make_wl_sidecar(WYVERN_PATH, r['depths'])
     ras3d.close_cube(h)
-    sys.path.insert(0, '/home/yann/dev/i.hyper.spectroscopy')
-    import importlib
-    m = importlib.import_module('i_hyper_spectroscopy')
+    m = load_addon('i.hyper.spectroscopy')
     try:
         fn = getattr(m, 'get_band_info')
         result = fn(WYVERN_PATH)

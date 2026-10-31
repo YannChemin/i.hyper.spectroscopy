@@ -169,21 +169,40 @@ because the engine's test is a different measurement.
 - Acceptance: a rule that detects the 12 surveyed sheets without firing on
   bare soil, limestone or vegetation in the same scene.
 
-## 5. A `library=` option for spectral-angle or matched-filter matching
+## 5. A `library=` option, but in `i.hyper.sleuth`, not here
 
-The highest-value single addition. Region growing at SAM < 0.20 rad already
-delineated all 12 surveyed sheets cleanly, mean within-region angle
-0.047-0.148, where the rule engine detected none of them. The library file
-format already exists from the campaign: wavelength column plus per-class mean
-and standard deviation.
+Still the highest-value single addition, and smaller than first written.
+Region growing at SAM < 0.20 rad already delineated all 13 surveyed sheets
+cleanly, mean within-polygon angle 0.046-0.105, where the rule engine detected
+none of them. The library file format already exists from the campaign:
+wavelength column plus per-class mean and standard deviation.
 
-- Read a labelled library CSV, resample it to the cube's bands, and output
-  best-match class plus the angle to it.
+**The matching mathematics is already implemented.** `i.hyper.sleuth` offers
+nineteen measures -- `sam`, `sid`, `sid_sam`, `ed`, `sad`, `sca`, `cr_sam`,
+`cr_ed`, `gd1`, `gd2`, `xcorr`, `dtw`, `ssim`, `jsd`, `bhatt`, `mtf`, `cem`,
+plus `ensemble` and `consensus` with six fusion modes, rank calibration and
+diversity weighting. Writing a second SAM in this module would duplicate it
+and be worse. What sleuth lacks is **multi-class**: `reference=` and
+`reference_file=` each take one spectrum and `output=` is one similarity
+raster.
+
+So the work belongs in `i.hyper.sleuth`:
+
+- Add `library=`, reading a labelled CSV whose columns are
+  `wavelength_nm`, then `<class>_mean` and `<class>_sd` per class -- the shape
+  `c2rd_target_spectra.csv` already has.
+- Resample each class to the cube's bands through the existing
+  `WavelengthLUT`, loop the existing matcher over classes, and output
+  best-match class plus the angle to it (`output=` class map,
+  `confidence=` angle).
 - Treat the angle as the confidence, which unlike the rule score has a
-  physical meaning.
-- Acceptance: on the C2RD mosaic, the 12 sheets are recovered from
+  physical meaning. The existing `consensus` machinery then comes for free.
+- Keep `min_reflectance`-style guards out of it: an angle is scale-free, which
+  is most of the reason it works where the depth rules do not.
+- Acceptance: on the C2RD mosaic, the 13 sheets are recovered from
   `c2rd_target_spectra.csv` with an angle below 0.20 rad, and open water and
   limestone are not.
+- Then this module's `library=` is just a delegation, or nothing at all.
 
 ## 6. Calibrated confidence — done, with a limit worth stating
 
@@ -277,3 +296,66 @@ classifies as `ice_snow`; and asphalt is missed entirely despite
   entirely dark could be misread. It is reported on every run and can be
   given explicitly, but a check against the band metadata's own scale factor
   (where `i.hyper.import` records one) would be better than inference.
+
+## 9. Cross-module items found while testing the siblings
+
+These came out of writing `i.hyper.poppy`'s unit suite and running the
+`test_ras3d_*` suites against the real Wyvern and Tanager cubes. They are
+recorded here because this is the family's working TODO, but four of them are
+not about `i.hyper.spectroscopy`.
+
+**Fixed.**
+
+- `_convert_wl_nm` accepted `micrometer` and `micron` but not
+  **`micrometers`**, which is the spelling ENVI headers use and which
+  `i.hyper.import/i_hyper_lib/envi.py` already accepts. A cube imported from
+  an ENVI header had 1.45 um read as 1.45 nm, with only a warning -- a silent
+  1000x error. The docstrings in `sleuth` and `cannabis` even claimed
+  `micrometer(s)` was accepted. Fixed in `poppy`, `sleuth`, `cannabis` and
+  `spectroscopy`, now taking the plural and British spellings too, with 20
+  parametrized cases pinning it.
+- `GLOBAL_STATS_METHODS = {'mtf', 'cem'}` was defined in `poppy`, `sleuth`
+  and `cannabis` and consulted by nothing in point mode, so both methods ran
+  on a single pixel, where the scene covariance they need is undefined
+  (`n - 1 = 0`). `match_mtf` built an all-NaN covariance and only degraded
+  gracefully by accident, because `pinv` happened to raise and hit the SAM
+  fallback; `match_cem` returned a degenerate score silently. Point mode now
+  skips them with a warning in all three.
+- The `test_ras3d_*` suites called `importlib.import_module('i_hyper_<x>')`
+  while the file on disk is `i.hyper.<x>.py`, which is not an importable name
+  however `sys.path` is set. **Nine suites had therefore never once imported
+  their module.** `cropname` and `rgb` already did it correctly with
+  `spec_from_file_location`; that is now a shared `load_addon()` helper in
+  `test_ras3d_common.py`, distributed to all 12 copies.
+
+**Open.**
+
+- `match_sam` adds `EPS` inside both norms instead of guarding the division,
+  so a perfect match returns `cos(a) = 1 - O(EPS)` and `arccos` amplifies that
+  to `sqrt(EPS)`, about 1e-6. Bounded and cosmetic, at the one point where the
+  answer is already unambiguous. Left alone rather than touch four modules'
+  matcher core; the poppy suite documents it with a 1e-5 tolerance and says
+  why.
+- **Three `.wl.json` readers are dead code, and three modules have none.**
+  The canonical writer is `ras3d_write` (`/usr/lib/python3/dist-packages/ras3d_write.py`,
+  lines 104-107): the path is the cube path with its **extension stripped**
+  plus `.wl.json`, and the content is a **flat JSON list of floats**,
+  `json.dump([round(float(w), 6) for w in wavelengths], f)`. Measured against
+  that contract:
+  - **Correct**: `albedo`, `cropname`, `geology`, `poppy`, `rgb` -- they try
+    the suffix list, read a flat list and scale um to nm.
+  - **Broken, and could never have worked**: `cannabis`, `sleuth`,
+    `spectroscopy`. All three build the path as `raster3d + '.wl.json'`, which
+    keeps the `.tiff` and so never finds the file, *and* iterate it as
+    `[{'band': .., 'wavelength': .., 'fwhm': .., 'valid': ..}, ..]`, a schema
+    nothing writes. Doubly dead: the wrong path means the wrong schema was
+    never even reached. Fix all three to the canonical contract, keeping their
+    own `min_wl`/`max_wl`/`only_valid` filtering, with `albedo`'s block as the
+    model.
+  - **Absent**: `continuum`, `indices`, `specresamp` resolve wavelengths only
+    through `$MAPSET/grid3/<name>/hyper.json` and fatal on a cube opened
+    straight from a file. Adding the fallback is a small feature, six lines
+    copied from `albedo`, but it is a feature rather than a test fix.
+
+  The `test_wavelength_sidecar` test in each `test_ras3d_*` suite was written
+  to check exactly this and had never run, because of the import bug above.

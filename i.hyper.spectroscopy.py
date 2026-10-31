@@ -340,6 +340,47 @@ def _load_hyper_json_bands(raster3d: str) -> list[dict]:
     return bands
 
 
+def _read_wl_sidecar(raster3d):
+    """Read the ras3d ``<cube>.wl.json`` sidecar, or return [].
+
+    The canonical writer is ``ras3d_write`` (and *i.hyper.atcorr* in
+    direct-file mode): the path is the cube path with its extension
+    stripped plus ``.wl.json``, and the payload is a flat JSON list of
+    band-centre wavelengths. A list of dicts carrying ``wavelength`` is
+    accepted too, so a richer sidecar written later still loads.
+
+    :param str raster3d: cube path or 3D raster name
+    :return: list of ``(wavelength_nm, fwhm_or_None, valid)`` tuples
+    :rtype: list[tuple]
+    """
+    import json as _json
+
+    for _sfx in ('.tif', '.tiff', '.h5', '.hdf5', '.vrt', '.img', ''):
+        _base = (raster3d.removesuffix(_sfx) if _sfx and raster3d.endswith(_sfx)
+                 else raster3d)
+        _wlp = _base + '.wl.json'
+        if not os.path.isfile(_wlp):
+            continue
+        with open(_wlp) as _fj:
+            _data = _json.load(_fj)
+        _out = []
+        for _entry in _data:
+            if isinstance(_entry, dict):
+                _wl = float(_entry['wavelength'])
+                _fwhm = (float(_entry['fwhm'])
+                         if _entry.get('fwhm') is not None else None)
+                _valid = bool(_entry.get('valid', True))
+            else:
+                _wl, _fwhm, _valid = float(_entry), None, True
+            # ras3d_write stores nm, but i.hyper.atcorr has written um.
+            if _wl < 10.0:
+                _wl *= 1000.0
+            _out.append((_wl, _fwhm, _valid))
+        if _out:
+            return _out
+    return []
+
+
 def get_band_info(raster3d: str, only_valid: bool = False) -> list[dict]:
     """Return sorted list of {band, wavelength, fwhm, valid} dicts.
 
@@ -348,24 +389,16 @@ def get_band_info(raster3d: str, only_valid: bool = False) -> list[dict]:
     then to r.support metadata per band if history is missing.
     """
     if _RAS3D:
-        import json as _json
-        _sidecar = raster3d + '.wl.json'
-        if os.path.isfile(_sidecar):
-            with open(_sidecar) as _fj:
-                _wl_data = _json.load(_fj)
-            _bands = []
-            for _entry in _wl_data:
-                _bands.append({
-                    'band': int(_entry['band']),
-                    'wavelength': float(_entry['wavelength']),
-                    'fwhm': float(_entry.get('fwhm', 10.0)),
-                    'valid': bool(_entry.get('valid', True)),
-                })
-            _bands.sort(key=lambda b: b['wavelength'])
-            if only_valid:
-                _bands = [b for b in _bands if b['valid']]
-            if _bands:
-                return _bands
+        _bands = [{'band': _i, 'wavelength': _wl_nm,
+                   'fwhm': _fwhm if _fwhm is not None else 10.0,
+                   'valid': _valid}
+                  for _i, (_wl_nm, _fwhm, _valid) in enumerate(
+                      _read_wl_sidecar(raster3d), start=1)]
+        _bands.sort(key=lambda b: b['wavelength'])
+        if only_valid:
+            _bands = [b for b in _bands if b['valid']]
+        if _bands:
+            return _bands
 
     json_bands = _load_hyper_json_bands(raster3d)
     if json_bands:
@@ -427,9 +460,12 @@ def get_band_info(raster3d: str, only_valid: bool = False) -> list[dict]:
                 continue
             # Unit conversion
             unit = unit.lower()
-            if unit in ('um', 'µm', 'micrometer', 'micron'):
+            # ENVI headers write 'Micrometers', so the plural spellings
+            # matter: without them a 1.45 um band is read as 1.45 nm.
+            if unit in ('um', 'µm', 'micrometer', 'micrometers',
+                        'micrometre', 'micrometres', 'micron', 'microns'):
                 wl *= 1000.0
-            elif unit in ('m', 'meter'):
+            elif unit in ('m', 'meter', 'meters', 'metre', 'metres'):
                 wl *= 1e9
             bands.append({'band': i, 'wavelength': wl,
                           'fwhm': fwhm or 10.0, 'valid': valid})
