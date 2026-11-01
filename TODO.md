@@ -204,6 +204,17 @@ So the work belongs in `i.hyper.sleuth`:
   limestone are not.
 - Then this module's `library=` is just a delegation, or nothing at all.
 
+The same `library=` serves a second source of reference spectra, now that
+`i.hyper.endmembers -i` labels what it extracts: its CSV is one row per
+endmember with a `wl_*` column per band and the matched material in
+`match_title`, so transposing it into the `wavelength_nm` + `<class>_mean`
+shape gives a per-pixel map of the scene's own endmembers rather than of the
+field campaign's classes. That is step 2 of the extraction pipeline and is
+untouched; the 20 endmembers of the C2RD mosaic are sitting in
+`~/grassdata/C2RD_drone_endmembers.csv` waiting for it. No `<class>_sd`
+column exists for them, so `library=` must tolerate a missing standard
+deviation.
+
 ## 6. Calibrated confidence — done, with a limit worth stating
 
 The reported confidence is now
@@ -359,6 +370,34 @@ not about `i.hyper.spectroscopy`.
 
   The `test_wavelength_sidecar` test in each `test_ras3d_*` suite was written
   to check exactly this and had never run, because of the import bug above.
+
+- **The served index needs a category filter in practice, not just in the
+  API.** Identifying the 20 N-FINDR endmembers of the C2RD drone mosaic
+  against the 251,753-spectrum index returned, among plausible vegetation and
+  microplastic matches, *Silver*, *Kodak White*, *L-Proline* and *75 vol% Ti
+  isopropoxide PDMS* -- laboratory preparations that cannot be in an outdoor
+  scene. The cause is library composition, not scoring: `ecosis` and `relab`
+  are 96% of the index (210,687 + 31,896 of 251,753), and RELAB's lab mixtures
+  match any smooth bright spectrum. `i.hyper.speclookup category=` /
+  `i.hyper.endmembers spec_category=` already exist and the server applies
+  them, so the work is to find which categories a field scene should be
+  restricted to and make that the documented default practice for
+  identification, with a measured before/after on the same 20 endmembers.
+  A white reference panel is a real possibility in a drone campaign, so
+  *Kodak White* is not automatically wrong -- that is exactly what the
+  measurement would settle.
+
+- **Nothing cross-checks whether an endmember is pure or merely extreme.**
+  `i.hyper.endmembers homogeneity=` now samples a local-variability raster at
+  each selected pixel and reports it against the raster's region mean, and
+  `i.variance.opencl method=sam_mean|spherical` produces exactly that map for
+  a cube. The two have not been run together on the C2RD mosaic, because no
+  variance raster exists for `mosaic_final` yet and `i.variance.opencl`
+  requires a 3D region matching the map, so the map has to be built at the
+  native 0.03 m grid over all 408 bands. Build it, rerun the identification
+  with `homogeneity=`, and record which of the 20 endmembers sit in
+  heterogeneous neighbourhoods -- those are mixtures or edges whatever their
+  library match says.
 
 ## 10. A local spectral-lookup service (prototype measured, not yet packaged)
 
