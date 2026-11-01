@@ -359,3 +359,135 @@ not about `i.hyper.spectroscopy`.
 
   The `test_wavelength_sidecar` test in each `test_ras3d_*` suite was written
   to check exactly this and had never run, because of the import bug above.
+
+## 10. A local spectral-lookup service (prototype measured, not yet packaged)
+
+The campaign's lesson was that an *angle against measured spectra* beats a
+rule over absorption depths (item 5). The libraries to compare against are
+already harvested: `~/grassdata/hyperspeclib` holds **273,002 spectra** in a
+Hive-partitioned Parquet tree (ecosis 229k, relab 34k, gsti 7.5k,
+usgs_splib07 2.5k), built by the `i.hyper.lib_*` harvesters and queried by
+`i.hyper.speclookup`.
+
+A prototype service lives at `~/dev/specserve` (`build_index.py`,
+`derive_matrices.py`, `server.py`). Measured on this machine:
+
+| | |
+|---|---|
+| indexed | 251,753 spectra (21,249 skipped, under 30 % grid coverage) |
+| canonical grid | 350-2500 nm at 10 nm, 216 bands |
+| resident | 653 MB across 3 memmapped matrices |
+| startup | 376 ms |
+| query, end to end | **46-69 ms** including JSON and resampling |
+
+### Why there is no tree, and no approximate index
+
+The search is **exact**, a full pass over every candidate, because the cost
+is memory bandwidth and not comparisons:
+
+| | time | achieved |
+|---|---|---|
+| GEMV, 1 query | 6.7 ms | 35.1 GB/s, 17.6 GFLOP/s |
+| GEMM, 64 queries | 0.67 ms/query | 177 GFLOP/s |
+| GEMM, 256 queries | 0.39 ms/query | 305 GFLOP/s |
+
+A matrix-vector product has about 2 FLOP per byte, so it sits far to the
+left of this machine's roofline balance point: the arithmetic is free and
+the memory pass is everything. Consequences:
+
+- A space-partitioning tree (KD-tree and friends) reduces *comparisons*,
+  which are not the cost, and above roughly 20 dimensions it has to visit
+  most of the data anyway. At 216 bands it would pay the same bandwidth,
+  lose exactness, and add an index to maintain. Rejected on measurement.
+- Batching is the real speedup: Level-2 to Level-3 BLAS reuses each loaded
+  cache block across queries and becomes compute-bound, **17x better per
+  query at a batch of 256**. A full-map classification must therefore send
+  blocks of spectra, not loop single queries. A `/search_batch` endpoint is
+  the single highest-value addition.
+
+### Two defects found and fixed in the prototype, worth keeping in mind
+
+- **Do not slice the library per query.** The first version fancy-indexed
+  the candidate rows out of the memmap, copying about 200 MB per query:
+  740 ms against the 7 ms the arithmetic takes. Replaced by three
+  precomputed matrices -- values (zero-filled), their squares, and a 0/1
+  support mask -- so the shared-support cosine is four whole-matrix GEMVs
+  with no extraction. 10-16x faster.
+- **Normalise over the *shared* support, not each spectrum's own.** The
+  stored row norm covers a spectrum's full range, which is not its overlap
+  with any given query, and reusing it biases the ranking against
+  partial-overlap candidates. Fixing it changed the top hit for the dry-soil
+  target 072 from a USGS Rangeland soil at 0.060 rad to an EcoSIS spectrum
+  at 0.054 rad with 189 of 203 bands shared. This is the same principle as
+  item 2: a measurement is only valid over the bands that were measured.
+
+Overlap is enforced rather than assumed -- candidates below `min_overlap`
+are rejected, not scored, and every result reports `overlap_bands` against
+`query_bands`. On this cube that matters directly: there are no bands at
+1329-1482 nm or 1784-1984 nm (item 2), and an angle taken across a gap is
+not a measurement.
+
+### Sanity check against surveyed ground
+
+| target | top match | angle |
+|---|---|---|
+| 072 dry soil excavation | EcoSIS soil, then three USGS *Rangeland* soils | 0.054 rad |
+| 097 firethorn shrub | USGS marsh water / vegetation | 0.064 rad |
+| 073 transparent polyolefin bag | RELAB organics, USGS **L-Lysine** | 0.089 rad |
+
+All three point the right way, including an organic C--H match for the
+polyolefin film -- the target the rule engine could not see at all.
+
+### Still to do
+
+- **Teach the service to carry spectral gaps as no-support.** `Library.search`
+  projects a query onto the canonical grid with a single
+  `np.interp(grid[inside], q_wl, q_val)` over `[q_wl[0], q_wl[-1]]`, so every
+  grid point between the query's first and last wavelength gets a value --
+  including the ones the sensor never sampled. A straight line is drawn across
+  each water-vapour gap and then compared against candidates that have real
+  structure there. This is the same defect as item 2 above, one level up: there
+  it was the continuum that had to respect the gaps, here it is the resampling
+  onto the shared grid.
+
+  The fix is the same shape too. Split the query into contiguous segments on
+  the same relative test `_spectral_segments()` uses (spacing above
+  `max(50 nm, 5 x median spacing)`), interpolate within each segment only, and
+  leave the gap grid points NaN so they fall out of the support mask -- which
+  the scoring already handles, since `qmask`/`q2`/`qm` are exactly the
+  machinery for a query that does not cover the whole grid. Nothing in the
+  four-GEMV scoring needs to change, and `min_overlap` then measures real
+  shared bands instead of counting fabricated ones.
+
+  Measured on one real C2RD drone spectrum (HySpex VS620, 408 bands,
+  411.4-2449.7 nm, gaps at 1329.0-1482.6 nm and 1784.5-1984.0 nm) against the
+  251,753-spectrum index at `min_overlap=0.55`: **36 of the 203 in-range grid
+  points, 17.7%, are fabricated by bridging**. Carrying the gaps instead drops
+  the query from 203 bands to 167, and of the top 10 **3 records change** while
+  the top 1 holds. Every angle is inflated by the bridging, by 2.0-2.6 degrees
+  over the top 10 (best match 20.62 vs 18.61 degrees), because the straight
+  line disagrees with whatever the candidate really does in the gap. So the
+  bias is conservative -- it makes good matches look worse rather than
+  inventing matches -- but it is systematic, it scales with how much of a
+  sensor's range is missing, and it reorders near-ties. Any sensor with
+  water-vapour gaps is affected: EMIT, EnMAP and PRISMA all are.
+
+- **Settle which library is canonical.** There are two unified readers:
+  this one (273k spectra) and `~/dev/openspeclib` (~33k, formal JSON Schema,
+  versioned releases, OSSL ~80k loader implemented, DuckDB-WASM viewer).
+  Packaging a service pins whichever it reads. Preferred path: make
+  openspeclib's validated schema canonical and bridge the `i.hyper.lib_*`
+  harvest into it.
+- `/search_batch`, for the GEMM speedup above.
+- A shared client helper in `i_hyper_lib`, so modules do not each
+  reimplement the contract, and so a module degrades gracefully when the
+  service is not running instead of failing silently.
+- Debian packaging with the index built post-install in the background: a
+  systemd **user** service, following the `xerj.service` precedent, since
+  the store lives under `$HOME`. Debian policy forbids long work in
+  maintainer scripts, so `postinst` registers units and exits while a
+  oneshot unit builds the index and reports to MetaMonitor; the server
+  answers `/health` with a building status until the matrix exists.
+- Quantisation (float16 or int8) is the only lever left on single-query
+  latency, since it reduces the bytes read. Validate against the float32
+  ranking before adopting.
