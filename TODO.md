@@ -11,6 +11,74 @@ airborne and drone products it **drops both water-vapour windows**, so it has
 no bands in 1329.0-1482.6 nm nor in 1784.5-1984.0 nm. Several items below
 exist only because the engine assumed contiguous coverage.
 
+## Implementation order
+
+Ranked by architectural benefit -- how much each one changes what the rest of
+the family can rely on -- rather than by raw value or by effort. Section
+numbers in brackets point at the full entry.
+
+**Shared contracts that are currently wrong.** These are inherited by every
+caller, so they come first whatever else is pending.
+
+1. **Gaps as no-support in the lookup service** [10, first bullet] --
+   **done**, and it moved 11 of 20 C2RD identifications. It also showed why
+   a relative overlap threshold alone is not enough: the denominator is the
+   query's own coverage, so the floor loosens as the query gets gappier. The
+   service now takes an absolute `min_overlap_bands` too. The rest of the
+   family still has to pass one: every module that calls the service with
+   `min_overlap_fraction=` alone is measuring against a moving denominator.
+2. **The `.wl.json` canonical contract across six modules** [9]. One writer,
+   six divergent readers: three resolve a path that cannot exist *and*
+   iterate a schema nothing writes, three have no reader and fatal on a cube
+   opened from a file. A contract exists and no implementation matches it.
+3. **A shared service client in `i_hyper_lib`** [10]. Do it before more
+   callers arrive: `i.hyper.sleuth` becomes the third consumer at item 6.
+   One helper also gets graceful degradation when the service is down,
+   instead of each module failing its own way.
+
+**Makes everything after it verifiable.**
+
+4. **Field-data regression gate** [7]. Until the surveyed ground is a gate,
+   items 6, 7 and 9 cannot be shown to have helped -- which is why this
+   outranks them despite being plumbing.
+5. **Region and temp-raster lifecycle** [8, two bullets]. An interrupted run
+   leaves the 3D region changed, silently altering what a later `r3.what`
+   returns, and `atexit` does not survive SIGTERM. Small work, removes a
+   whole class of silent failure.
+
+**New capability, once the ground is solid.**
+
+6. **Multi-class `library=` in `i.hyper.sleuth`** [5]. Consolidates matching
+   where the nineteen measures already live, so no second SAM is written
+   here and this module's `library=` becomes a delegation or nothing. Also
+   step 2 of the extraction pipeline.
+7. **Shape detector as a second species kind** [4]. Broad continuum
+   curvature cannot be stated in the present formalism at any threshold.
+   Needs item 4 first or its acceptance test is unfalsifiable.
+8. **Drop the ASCII round-trip for raster writing** [8]. `%.4f` through
+   `r.in.ascii` costs time and silently quantises reflectance; the I/O path
+   is wrong for the data type.
+
+**High value, low architecture.**
+
+9. **Category filtering as documented practice** [9]. The cheapest real
+   improvement on this list: the options exist and the server applies them,
+   so the work is deciding which categories a field scene is restricted to
+   and measuring before/after. Pair it with the `homogeneity=` run [9] as
+   its validation.
+10. **Service packaging as a systemd user unit** [10]. Worth little before
+    item 3 and quite a lot after it: it turns the service from something
+    started by hand into a dependency a module may assume.
+11. **Everything else** [8, 9, 10]: `/search_batch` and quantisation (only
+    once per-pixel matching exists -- latency is already 47 ms), class 0 vs
+    NULL in the class map, the coverage print mode, the `min_reflectance`
+    contrast test, `reflectance_scale` from band metadata rather than
+    inference, generic plastic rule floors, the cosmetic `match_sam` EPS.
+
+The OpenCL device-adaptation items in `i.hyper.smac/TODO.md` and
+`i.hyper.vegcamopaint/TODO.md` are deliberately outside this ranking: they
+are a different subsystem and form a parallel track.
+
 ## Done
 
 - **Per-band detection thresholds.** A feature-database entry may carry its own
@@ -479,7 +547,14 @@ polyolefin film -- the target the rule engine could not see at all.
 
 ### Still to do
 
-- **Teach the service to carry spectral gaps as no-support.** `Library.search`
+- **Teach the service to carry spectral gaps as no-support -- done.**
+  `gaps.py` now holds the segment test, both sides of the comparison use it
+  (the query in `Library.search`, the library in `build_index.py`'s
+  `GridPlan.inside`), the response carries `query_gaps_nm` and `/health`
+  reports `gap_aware`. The measurement that follows is what the fix was
+  judged on; the side effect it exposed, and the absolute overlap floor
+  added for it, are at the end of this entry. Original diagnosis:
+  `Library.search`
   projects a query onto the canonical grid with a single
   `np.interp(grid[inside], q_wl, q_val)` over `[q_wl[0], q_wl[-1]]`, so every
   grid point between the query's first and last wavelength gets a value --
@@ -511,12 +586,85 @@ polyolefin film -- the target the rule engine could not see at all.
   sensor's range is missing, and it reorders near-ties. Any sensor with
   water-vapour gaps is affected: EMIT, EnMAP and PRISMA all are.
 
-- **Settle which library is canonical.** There are two unified readers:
-  this one (273k spectra) and `~/dev/openspeclib` (~33k, formal JSON Schema,
-  versioned releases, OSSL ~80k loader implemented, DuckDB-WASM viewer).
-  Packaging a service pins whichever it reads. Preferred path: make
-  openspeclib's validated schema canonical and bridge the `i.hyper.lib_*`
-  harvest into it.
+  Measured again over all 20 C2RD endmembers once both sides of the index
+  were gap-aware, against three servers (old code and index; new code, old
+  index; new code, new index): **11 of the 20 top-1 identifications change**,
+  mean angle change -0.41 degrees (-1.71 to +1.53), and a mean 4.3 of the
+  top 10 records are retained. The library-side half of the fix accounts for
+  only 1 of those 11 on this query set -- it excluded 53 spectra and 44 more
+  wavelength grids, which had met `min_coverage` only by counting their own
+  gaps -- but it is the half that matters for a query with complete coverage,
+  where the query-side fix does nothing and only the candidates have gaps.
+
+  **The fraction's denominator was the trap.** `need = min_overlap * qn`, and
+  carrying the gaps drops `qn` from 203 to 167, so `min_overlap=0.55` fell
+  from a 112-point floor to a 92-point one: the threshold loosened by 18%
+  exactly where the query was gappiest. Six of the new top-1 hits rested on
+  overlap below the old floor, and restoring it in real bands (112/167 =
+  0.67) changed 7 of the 20 again. `Library.search` therefore takes a
+  `min_overlap_bands` alongside the fraction and applies the stricter
+  (`/health` reports `absolute_overlap_floor`, the response reports
+  `overlap_required`); *i.hyper.speclookup* sends both rather than converting
+  one into the other, and warns when the server is too old to apply the
+  floor. A bare fraction cannot express this requirement, because its
+  denominator is a property of the query.
+
+- **Which library is canonical -- settled, and verified end to end
+  (2026-11-01).** The preferred path below was taken: openspeclib's
+  validated schema is canonical, and the `i.hyper.lib_*` harvest is bridged
+  into it by `openspeclib/loaders/hyperspeclib.py`. Verified on the live
+  store rather than assumed: all 273,002 records in
+  `~/grassdata/openspeclib/catalog.json` carry a `source.filename` of the
+  form `dataset_*.parquet`, which only the hyperspeclib tree produces, and
+  the per-source counts match `~/grassdata/hyperspeclib/_manifest.json`
+  exactly (ecosis 229,368, relab 33,616, gsti 7,561, usgs_splib07 2,457).
+  Not one record came from a direct loader. The chain in full:
+
+      $HOME/DBDATA/<download>
+        -> i.hyper.lib_{ecosis,gsti,relab,usgs}   (GRASS addon, harvest)
+        -> ~/grassdata/hyperspeclib               (Hive Parquet + manifest)
+        -> openspeclib loaders/hyperspeclib.py    (validate, licence, schema)
+        -> ~/grassdata/openspeclib                (catalog.json + per-source
+                                                   parquet, versioned)
+        -> specserve build_index.py               (216-point canonical grid)
+        -> the served index                       (251,700 of the 273,002)
+
+  The 21,302 dropped at index time are the out-of-grid and unusable-grid
+  records, not a second library.
+
+  **Keep it a single entry path.** The reason the verification matters is
+  that openspeclib also registers direct loaders for `asu_tes`, `bishop`,
+  `ecostress` and `ossl` (`cli.py` `LOADERS`), and those have no
+  `i.hyper.lib_*` harvester, so the only way their data can enter is by
+  bypassing the GRASS layer. For `ecosis`, `relab` and `usgs` the direct
+  loaders are harmless -- `write_source` writes one file per source, so a
+  hyperspeclib ingest replaces rather than duplicates them -- but a source
+  that enters only through openspeclib is invisible to
+  `i.hyper.speclookup library=`, which scans the harvest tree, and has no
+  GRASS-side provenance or re-harvest manifest. Rule to hold to: **every
+  source gets an `i.hyper.lib_<name>` harvester, and openspeclib's direct
+  loader for it is then only a fallback for people without GRASS.**
+
+  Local downloads already in `$HOME/DBDATA` with no harvester, so currently
+  unreachable from GRASS (sizes as on disk):
+
+  | Download | Size | openspeclib loader? |
+  |---|---|---|
+  | `EU_Soil_Spectral_Libraries/OSSL_v1.2` (VNIR only; MIR not downloaded) | 199 MB | yes, `ossl` |
+  | `ecospeclib_1770742794330` (ECOSTRESS/ASTER) | 157 MB | yes, `ecostress` |
+  | `USDA_ARS_Beltsville` (crop residue, WV3/SWIR) | 56 MB | no |
+  | `CannabisSativa` (multispectral, Mendeley) | 23 MB | no |
+  | `LUMA_SLUM` (urban materials, IR + SW) | 20 MB | no |
+  | `GHISACONUS_2008_001_speclib.csv` + two `GHISACASIA_*.xlsx` (GHISA crops) | 13 MB | no |
+  | `CROPS` (DESIS/PRISMA spectral library release) | 6 MB | no |
+  | `WaRM_spectral_library` (one CSV per material) | 2 MB | no |
+  | `Papers_crop_residues` | 40 KB | no |
+
+  OSSL and ECOSTRESS are the two to do first, because they are the ones a
+  direct loader can already pull in behind the harvest's back. OSSL also
+  doubles the store's soil coverage, which is currently 5,092 of 273,002
+  records (1.9%) against 189,324 vegetation.
+
 - `/search_batch`, for the GEMM speedup above.
 - A shared client helper in `i_hyper_lib`, so modules do not each
   reimplement the contract, and so a module degrades gracefully when the
@@ -530,3 +678,43 @@ polyolefin film -- the target the rule engine could not see at all.
 - Quantisation (float16 or int8) is the only lever left on single-query
   latency, since it reduces the bytes read. Validate against the float32
   ranking before adopting.
+
+### Later: how openspeclib gets into GRASS
+
+Not now, but these are the constraints worth recording while they are fresh,
+because they decide whether today's structure survives the move.
+
+- **A GRASS addon cannot carry a Python library the way this one is
+  carried.** `g.extension` installs a module directory; it does not resolve
+  Python dependencies. So openspeclib has to be either an optional
+  dependency imported lazily after `gs.parser()` (the pattern every
+  `i.hyper.*` module already uses for numpy/pyarrow), with a `gs.fatal`
+  naming the pip install when it is missing, or vendored into
+  `i_hyper_lib/`. Prefer the optional dependency: it keeps openspeclib's
+  own versioning and JSON Schema, which is the whole reason it is canonical.
+- **The store does not belong in a mapset.** It is projection-free,
+  region-free, read-mostly reference data shared by every project, so
+  `$HOME/grassdata/openspeclib` beside the GISDBASE is right and a
+  mapset element would be wrong. GRASS has no element type for this, which
+  is a real gap: signature files (`struct Signature`) are per-class mean and
+  covariance over an imagery group's bands, keyed by semantic label with no
+  wavelength axis, and `raster3d` has no semantic-label support at all, so
+  neither can hold a library record. Upstream would need a new element, or
+  to accept a store outside the mapset.
+- **The service is the integration point, not the file format.** Modules
+  already talk to `specserve` over HTTP and none of them parses the store,
+  so an upstream GRASS could ship the client (item 3 above) and leave the
+  store and the server as a separately installed data package. That is also
+  what makes the Debian packaging item below the real delivery vehicle.
+- **What to propose upstream, in order**: semantic labels (or a wavelength
+  axis) for `raster3d`, so a cube can describe itself without `.wl.json`;
+  then a spectral-library element or an accepted convention for an
+  out-of-mapset store; then the client. The harvesters can stay addons
+  indefinitely -- they are downloaders, and upstream has no appetite for
+  bundling third-party data.
+
+## Ultimate goal
+
+A fully documented report in
+`/home/yann/Documents/LaTex/Report/20261030_ORUS_C2RD_Drone_Flight_Experiment`
+with extensive spectral analysis -- literally a spectral forensic analysis.
